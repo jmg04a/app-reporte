@@ -1,3 +1,3 @@
-# reporte_itl
+# app-reporte
 
-A new Flutter project.
+Aplicacion para reportar distintas situaciones
