@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../home/home_screen.dart';
+import '../auth/register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,7 +31,14 @@ class _LoginScreenState extends State<LoginScreen> {
 Future<void> _iniciarSesion() async {
     setState(() => _isLoading = true);
     try {
-      final emailCompleto = _usuarioController.text.trim() + _dominio;
+
+      // 1. Obtienes lo que escribió el usuario limpio
+      final inputUsuario = _usuarioController.text.trim();
+
+      // 2. Decides inteligentemente
+      final emailCompleto = inputUsuario.contains('@') 
+      ? inputUsuario // Si ya tiene @, lo dejamos tal cual (el trigger de BD validará si es del ITL)
+      : inputUsuario + _dominio; // Si no tiene @, le pegamos el dominio
 
       // Intentamos iniciar sesión
       await Supabase.instance.client.auth.signInWithPassword(
@@ -59,54 +67,6 @@ Future<void> _iniciarSesion() async {
 
     } catch (e) {
       _mostrarError("Error inesperado: $e"); // Error de código o internet
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // LOGICA DE REGISTRO
-Future<void> _registrarse() async {
-    setState(() => _isLoading = true);
-    try {
-      final emailCompleto = _usuarioController.text.trim() + _dominio;
-
-      // 1. Enviamos el registro a Supabase
-      // Como activaste "Confirm Email", esto enviará el correo automáticamente
-      final response = await Supabase.instance.client.auth.signUp(
-        email: emailCompleto,
-        password: _passwordController.text,
-      );
-
-      // 2. Verificamos si Supabase nos pide confirmación
-      // Si la sesión es nula, significa que requiere verificación
-      if (response.session == null && mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("✉️ Verificación Enviada"),
-            content: Text(
-              "Hemos enviado un enlace a:\n$emailCompleto\n\n"
-              "Por favor, revisa tu correo institucional y haz clic en el enlace para activar tu cuenta."
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Entendido"),
-              ),
-            ],
-          ),
-        );
-      } else if (mounted) {
-        // Si por alguna razón entra directo (ej. desactivaste la confirmación luego)
-         Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(builder: (context) => const HomeScreen())
-        );
-      }
-    } on AuthException catch (e) {
-      _mostrarError(e.message);
-    } catch (e) {
-      _mostrarError("Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -179,13 +139,17 @@ Future<void> _registrarse() async {
                     
                     // Botón de registro secundario
                     OutlinedButton(
-                      onPressed: _registrarse,
+                      onPressed: () {
+                        // NAVEGACIÓN A LA PANTALLA DE REGISTRO
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                        );
+                      },
                       style: OutlinedButton.styleFrom(
-                         minimumSize: const Size(double.infinity, 50),
-                         side: const BorderSide(color: Color(0xFF800000)),
-                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          // ... tus estilos
                       ),
-                      child: const Text("Registrarse (Crear Cuenta)", style: TextStyle(color: Color(0xFF800000))),
+                      child: const Text("Registrarse (Crear Cuenta)"),
                     ),
                   ],
                 ),
