@@ -143,7 +143,7 @@ Future<void> _iniciarSesion() async {
                         // NAVEGACIÓN A LA PANTALLA DE REGISTRO
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                          MaterialPageRoute(builder: (context) => RegisterScreen()),
                         );
                       },
                       style: OutlinedButton.styleFrom(
