@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../home/home_screen.dart';
 import '../auth/register_screen.dart';
+import '../auth/forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -84,7 +85,7 @@ Future<void> _iniciarSesion() async {
               const Icon(Icons.school, size: 80, color: Color(0xFF800000)),
               const SizedBox(height: 20),
               const Text(
-                "Reportes ITL",
+                "PlaceHolderTitle",
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 40),
@@ -93,7 +94,7 @@ Future<void> _iniciarSesion() async {
               TextField(
                 controller: _usuarioController,
                 decoration: InputDecoration(
-                  labelText: "Usuario / No. Control",
+                  labelText: "Correo Institucional",
                   hintText: "ej. alu.20310092", // Ejemplo corto
                   
                   // ESTA ES LA PARTE VISUAL CLAVE:
@@ -119,6 +120,27 @@ Future<void> _iniciarSesion() async {
                 obscureText: true,
               ),
               const SizedBox(height: 30),
+
+              const SizedBox(height: 10),
+
+              // BOTÓN DE "OLVIDÉ MI CONTRASEÑA"
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                    );
+                  },
+                  child: const Text(
+                    "¿Olvidaste tu contraseña?",
+                    style: TextStyle(color: Color(0xFF800000), fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
 
               if (_isLoading)
                 const CircularProgressIndicator()
