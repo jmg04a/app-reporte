@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'reset_password_otp_screen.dart'; // Importamos la nueva pantalla
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -12,34 +13,31 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
   bool _isLoading = false;
   
-  // El mismo dominio que usamos en Login
   static const String _dominio = "@correo.itlalaguna.edu.mx";
 
   Future<void> _enviarCorreoRecuperacion() async {
     if (_emailController.text.trim().isEmpty) {
-      _mostrarMensaje("Por favor ingresa tu correo o número de control", esError: true);
+      _mostrarMensaje("Por favor ingresa tu correo institucional", esError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // 1. FORMATEAR CORREO (Igual que en Login)
       String input = _emailController.text.trim();
       String emailFinal = input.contains('@') ? input : input + _dominio;
 
-      // 2. ENVIAR SOLICITUD A SUPABASE
-      // Esto enviará un email con un enlace para resetear el password
-      await Supabase.instance.client.auth.resetPasswordForEmail(
-        emailFinal,
-        // Opcional: redirectTo: 'io.supabase.tuapp://login-callback',
-        // Si no configuras Deep Links, el usuario reseteará en el navegador.
-      );
+      await Supabase.instance.client.auth.resetPasswordForEmail(emailFinal);
 
       if (!mounted) return;
       
-      // 3. ÉXITO
-      _mostrarDialogoExito(emailFinal);
+      // ✅ CORRECCIÓN AQUÍ: Quitamos el 'const'
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ResetPasswordOtpScreen(email: emailFinal),
+        ),
+      );
 
     } on AuthException catch (e) {
       _mostrarMensaje(e.message, esError: true);
@@ -59,34 +57,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 
-  void _mostrarDialogoExito(String email) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("📧 Correo Enviado"),
-        content: Text(
-          "Hemos enviado las instrucciones a:\n$email\n\n"
-          "Revisa tu bandeja de entrada (y Spam). El enlace te permitirá crear una nueva contraseña."
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Cierra diálogo
-              Navigator.pop(context); // Regresa al Login
-            },
-            child: const Text("Entendido, ir al Login"),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Recuperar Contraseña"),
-        backgroundColor: const Color(0xFF800000), // Rojo ITL
+        backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
       ),
       body: Padding(
@@ -106,13 +82,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             const SizedBox(height: 10),
             
             const Text(
-              "Ingresa tu número de control o correo institucional y te enviaremos un enlace para restablecerla.",
+              "Ingresa tu correo institucional y te enviaremos un código para restablecerla.",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 30),
 
-            // CAMPO DE TEXTO
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(
@@ -120,8 +95,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 hintText: "ej. alu.19130095",
                 // ESTA ES LA PARTE VISUAL CLAVE:
                 suffixText: _dominio, 
-                suffixStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-                
+                suffixStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
                 prefixIcon: Icon(Icons.email_outlined),
                 border: OutlineInputBorder(),
               ),
@@ -129,7 +103,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
             const SizedBox(height: 30),
 
-            // BOTÓN
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else
@@ -141,7 +114,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: const Text("ENVIAR INSTRUCCIONES", style: TextStyle(fontSize: 16)),
+                child: const Text("ENVIAR CÓDIGO", style: TextStyle(fontSize: 16)),
               ),
           ],
         ),
