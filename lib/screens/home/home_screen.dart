@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/login_screen.dart';
+// 1. IMPORTAMOS LA NUEVA PANTALLA
+import '../reportes/create_report_screen.dart'; 
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -23,7 +25,6 @@ class HomeScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF800000), // Color Guinda
         foregroundColor: Colors.white,
         actions: [
-          // BOTÓN DE SALIR
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => cerrarSesion(context),
@@ -39,21 +40,29 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 20),
             const Text(
               "¡Bienvenido al Sistema!",
-              style: TextStyle(fontSize: 20),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            const Text("Aquí aparecerán los reportes."),
-            const SizedBox(height: 30),
+            const Text("Aquí aparecerán los reportes.", style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 40),
             
-            // Botón temporal para probar navegación
-            ElevatedButton(
+            // 2. BOTÓN ACTUALIZADO PARA NAVEGAR A LA PANTALLA REAL
+            ElevatedButton.icon(
               onPressed: () {
-                // Aquí iremos a la pantalla de "Crear Reporte" luego
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Próximamente: Formulario de Reporte")),
+                // Navegación a la pantalla de crear reporte
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CreateReportScreen()),
                 );
               },
-              child: const Text("Crear Nuevo Reporte"),
+              icon: const Icon(Icons.add),
+              label: const Text("Crear nuevo reporte", style: TextStyle(fontSize: 16)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF800000), // Color guinda ITL
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
             ),
           ],
         ),
