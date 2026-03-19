@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-// Importa tus pantallas (aunque te marquen error ahorita porque no las has creado)
-// Esto se arreglará en el siguiente paso.
-import 'screens/auth/login_screen.dart';
-import 'screens/home/home_screen.dart';
+import 'screens/splash/splash_screen.dart'; // <-- 1. IMPORTAMOS EL NUEVO SPLASH SCREEN
 
 Future<void> main() async {
   // 1. Aseguramos que el motor de Flutter esté listo
@@ -13,7 +9,7 @@ Future<void> main() async {
 
   await dotenv.load(fileName: ".env");
 
-  // 2. Conectamos con Supabase (Pega tus claves aquí)
+  // 2. Conectamos con Supabase
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
@@ -33,7 +29,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Reportes ITL',
-      debugShowCheckedModeBanner: false, // Quita la etiqueta "Debug" de la esquina
+      debugShowCheckedModeBanner: false, 
       
       // Tema Global (Estilo del Tec)
       theme: ThemeData(
@@ -44,11 +40,8 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
 
-      // Lógica de Redirección (El Portero)
-      // ¿Existe una sesión guardada en el celular?
-      home: supabase.auth.currentSession == null 
-          ? const LoginScreen()  // No -> Mándalo a loguearse
-          : const HomeScreen(),  // Sí -> Déjalo pasar al feed
+      // <-- 2. AHORA LA APP SIEMPRE ABRE PRIMERO EL SPLASH SCREEN
+      home: const SplashScreen(), 
     );
   }
 }
