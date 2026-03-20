@@ -5,6 +5,7 @@ import '../reportes/create_report_screen.dart';
 import '../reportes/report_detail_screen.dart'; 
 import '../reportes/filter_screen.dart';
 import 'profile_screen.dart'; // Asegúrate de importar la pantalla que acabamos de crear
+import 'package:flutter/foundation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -282,6 +283,8 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: "Filtros Avanzados",
           ),
           // --- ESTE BOTÓN AHORA CIERRA LA APLICACIÓN ---
+          // --- CONDICIÓN DEFINITIVA: SOLO MOSTRAR EN ANDROID / WINDOWS ---
+          if (!kIsWeb && defaultTargetPlatform != TargetPlatform.iOS)
           IconButton(
             icon: const Icon(Icons.exit_to_app),
             onPressed: _salirDeLaApp,

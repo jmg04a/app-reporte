@@ -54,6 +54,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         cat_categorias (nombre, icono, color),
         perfiles (
           nombre,
+          avatar_url,
           estudiantes (numero_control)
         )
       ''').eq('id', widget.reporteId).single();
@@ -144,6 +145,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     // --- EXTRACCIÓN SEGURA DE DATOS DEL CREADOR ---
     final perfilCreador = reporte['perfiles']; 
     final nombreCreador = perfilCreador?['nombre'] ?? 'Usuario Desconocido';
+    final avatarUrl = perfilCreador?['avatar_url']; // <--- AGREGA ESTA LÍNEA
     
     // Dependiendo de cómo lo devuelva Supabase (lista o mapa), sacamos el número de control
     String? numeroControl;
@@ -262,8 +264,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     child: Row(
                       children: [
                         CircleAvatar(
+                          radius: 24, // Lo hacemos un poquito más grande para que se vea bien la foto
                           backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                          child: const Icon(Icons.person, color: Color(0xFF800000)),
+                          backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                          child: avatarUrl == null ? const Icon(Icons.person, color: Color(0xFF800000)) : null,
                         ),
                         const SizedBox(width: 15),
                         Expanded(
