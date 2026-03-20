@@ -227,11 +227,12 @@ class _FilterScreenState extends State<FilterScreen> {
                   
                   DropdownButtonFormField<String>(
                     initialValue: _selectedOrdenReacciones,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: "Ordenar por Reacciones", prefixIcon: Icon(Icons.favorite), border: OutlineInputBorder()),
                     items: const [
-                      DropdownMenuItem(value: 'recientes', child: Text("Los más recientes primero (Por defecto)")),
-                      DropdownMenuItem(value: 'desc', child: Text("Más a menos reacciones")),
-                      DropdownMenuItem(value: 'asc', child: Text("Menos a más reacciones")),
+                      DropdownMenuItem(value: 'recientes', child: Text("Los más recientes primero (Por defecto)", overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 'desc', child: Text("Más a menos reacciones", overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(value: 'asc', child: Text("Menos a más reacciones", overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: (val) => setState(() => _selectedOrdenReacciones = val!),
                   ),
