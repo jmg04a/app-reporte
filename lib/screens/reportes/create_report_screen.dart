@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:convert'; // Para convertir el borrador a texto
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Para guardar el borrador
 
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({super.key});
@@ -15,21 +17,34 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
 
-  bool _isLoading = false;
+  bool _isSubmitting = false; // Rueda de carga del botón enviar
+  bool _isLoadingData = true; // Rueda de carga al abrir la pantalla
 
   List<Map<String, dynamic>> _categorias = [];
-  List<Map<String, dynamic>> _todosLosLugares = []; // Nueva lista para el buscador inteligente
+  List<Map<String, dynamic>> _todosLosLugares = []; 
 
   int? _selectedCategoriaId;
-  int? _selectedLugarId; // Sustituye a edificioId y aulaId
+  int? _selectedLugarId; 
 
   XFile? _imagenSeleccionada;
   final ImagePicker _picker = ImagePicker();
+
+  // Esta llave nos servirá para reiniciar el buscador de lugares cuando limpiemos el borrador
+  Key _autocompleteKey = UniqueKey();
 
   @override
   void initState() {
     super.initState();
     _cargarDatosIniciales();
+  }
+
+  @override
+  void dispose() {
+    _tituloController.removeListener(_guardarBorrador);
+    _descripcionController.removeListener(_guardarBorrador);
+    _tituloController.dispose();
+    _descripcionController.dispose();
+    super.dispose();
   }
 
   Future<void> _cargarDatosIniciales() async {
@@ -42,18 +57,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           .select('id, nombre, icono, color')
           .order('nombre');
 
-      // 2. Descargamos TODOS los lugares para el buscador
+      // 2. Descargamos Lugares
       final lugaresData = await supabase
           .from('cat_lugares')
           .select('id, nombre, tipo, parent_id')
           .order('nombre');
 
-      // 3. Formateamos los lugares en la memoria del celular para que el buscador sea instantáneo
       List<Map<String, dynamic>> lugaresFormateados = [];
       for (var lugar in lugaresData) {
         String nombreMostrar = lugar['nombre'];
-        
-        // Si es un aula, buscamos el nombre de su edificio para darle contexto al usuario (Ej. "Aula 1 (Edificio Sistemas)")
         if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
           final padre = lugaresData.firstWhere(
             (element) => element['id'] == lugar['parent_id'], 
@@ -63,7 +75,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             nombreMostrar = '$nombreMostrar (${padre['nombre']})';
           }
         }
-
         lugaresFormateados.add({
           'id': lugar['id'],
           'nombreBuscable': nombreMostrar,
@@ -76,10 +87,87 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           _todosLosLugares = lugaresFormateados;
         });
       }
+
+      // 3. ¡NUEVO! Cargamos el borrador si existe, DESPUÉS de cargar los catálogos
+      await _cargarBorrador();
+
     } catch (e) {
       _mostrarMensaje("Error cargando catálogos: $e", esError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingData = false);
     }
   }
+
+  // --- LÓGICA DE BORRADOR (AUTOGUARDADO) ---
+
+  Future<void> _cargarBorrador() async {
+    final prefs = await SharedPreferences.getInstance();
+    final borradorStr = prefs.getString('reporte_borrador');
+
+    if (borradorStr != null) {
+      final borrador = jsonDecode(borradorStr);
+      setState(() {
+        _tituloController.text = borrador['titulo'] ?? '';
+        _descripcionController.text = borrador['descripcion'] ?? '';
+        _selectedCategoriaId = borrador['categoriaId'];
+        _selectedLugarId = borrador['lugarId'];
+      });
+    }
+
+    // Le decimos a los campos de texto que guarden automáticamente cada vez que el usuario escriba una letra
+    _tituloController.addListener(_guardarBorrador);
+    _descripcionController.addListener(_guardarBorrador);
+  }
+
+  Future<void> _guardarBorrador() async {
+    final prefs = await SharedPreferences.getInstance();
+    final borrador = {
+      'titulo': _tituloController.text,
+      'descripcion': _descripcionController.text,
+      'categoriaId': _selectedCategoriaId,
+      'lugarId': _selectedLugarId,
+    };
+    await prefs.setString('reporte_borrador', jsonEncode(borrador));
+  }
+
+  Future<void> _limpiarBorrador() async {
+    // Confirmación antes de borrar
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Descartar reporte"),
+        content: const Text("¿Estás seguro de que deseas borrar todo lo que has escrito?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Sí, descartar"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('reporte_borrador'); // Borramos de la memoria
+
+      setState(() {
+        // Limpiamos la pantalla
+        _tituloController.clear();
+        _descripcionController.clear();
+        _selectedCategoriaId = null;
+        _selectedLugarId = null;
+        _imagenSeleccionada = null;
+        _autocompleteKey = UniqueKey(); // Reiniciamos el buscador de texto forzosamente
+      });
+    }
+  }
+
+  // ----------------------------------------
 
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
@@ -156,7 +244,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   Future<void> _enviarReporte() async {
-    // 1. Validaciones
     if (_tituloController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa un título.", esError: true);
       return;
@@ -170,7 +257,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSubmitting = true);
 
     try {
       final supabase = Supabase.instance.client;
@@ -181,11 +268,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           .from('reportes')
           .select('id, titulo, estado, reporte_ubicaciones!inner(lugar_id)')
           .eq('categoria_id', _selectedCategoriaId!)
-          .neq('estado', 'finalizado') // Omitimos los ya resueltos
+          .neq('estado', 'finalizado') 
           .eq('reporte_ubicaciones.lugar_id', _selectedLugarId!);
 
       if (duplicados.isNotEmpty && mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isSubmitting = false);
         final tituloDuplicado = duplicados[0]['titulo'];
         
         final continuar = await showDialog<bool>(
@@ -217,11 +304,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         );
 
         if (continuar != true) return;
-        setState(() => _isLoading = true);
+        setState(() => _isSubmitting = true);
       }
-      // --- FIN RADAR ---
 
-      // 2. Subir imagen (si hay)
+      // Subir imagen (si hay)
       String? evidenciaUrlFinal;
       if (_imagenSeleccionada != null) {
         final extension = _imagenSeleccionada!.name.split('.').last;
@@ -237,7 +323,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
 
-      // 3. Guardar el reporte principal
+      // Guardar el reporte principal
       final reporteInsertado = await supabase.from('reportes').insert({
         'titulo': _tituloController.text.trim(),
         'descripcion': _descripcionController.text.trim(),
@@ -249,11 +335,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       final reporteId = reporteInsertado['id'];
 
-      // 4. Guardar la ubicación
+      // Guardar la ubicación
       await supabase.from('reporte_ubicaciones').insert({
         'reporte_id': reporteId,
         'lugar_id': _selectedLugarId,
       });
+
+      // ¡NUEVO! Como el reporte ya se envió, borramos el borrador guardado en el teléfono
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('reporte_borrador');
 
       if (!mounted) return;
       _mostrarMensaje("¡Reporte enviado con éxito!");
@@ -262,17 +352,46 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     } catch (e) {
       _mostrarMensaje("Error al enviar reporte: $e", esError: true);
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Si todavía estamos extrayendo los datos y el borrador de la memoria, mostramos una carga inicial
+    if (_isLoadingData) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Nuevo Reporte"),
+          backgroundColor: const Color(0xFF800000),
+        ),
+        body: const Center(child: CircularProgressIndicator(color: Color(0xFF800000))),
+      );
+    }
+
+    // Preparamos el texto del buscador de lugares para que coincida con el borrador recuperado
+    String textLugarInicial = '';
+    if (_selectedLugarId != null && _todosLosLugares.isNotEmpty) {
+      final lugarEncontrado = _todosLosLugares.firstWhere(
+        (l) => l['id'] == _selectedLugarId, 
+        orElse: () => {'nombreBuscable': ''}
+      );
+      textLugarInicial = lugarEncontrado['nombreBuscable'];
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Nuevo Reporte"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
+        actions: [
+          // ¡NUEVO! Botón para descartar/limpiar el borrador
+          IconButton(
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: "Limpiar reporte",
+            onPressed: _limpiarBorrador,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -304,7 +423,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   ),
                 );
               }).toList(),
-              onChanged: (val) => setState(() => _selectedCategoriaId = val),
+              onChanged: (val) {
+                setState(() => _selectedCategoriaId = val);
+                _guardarBorrador(); // Autoguardado al cambiar opción
+              },
             ),
             const SizedBox(height: 20),
             const Divider(),
@@ -313,8 +435,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
             
-            // --- AQUÍ ESTÁ EL BUSCADOR INTELIGENTE TIPO YOUTUBE ---
+            // BUSCADOR INTELIGENTE
             Autocomplete<Map<String, dynamic>>(
+              key: _autocompleteKey, // Esto permite reiniciarlo desde el botón limpiar
+              initialValue: TextEditingValue(text: textLugarInicial), // Carga el borrador
               optionsBuilder: (TextEditingValue textEditingValue) {
                 if (textEditingValue.text.isEmpty) {
                   return const Iterable<Map<String, dynamic>>.empty();
@@ -328,7 +452,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               displayStringForOption: (option) => option['nombreBuscable'],
               onSelected: (option) {
                 setState(() => _selectedLugarId = option['id']);
-                FocusScope.of(context).unfocus(); // Oculta el teclado al elegir
+                _guardarBorrador(); // Autoguardado al seleccionar ubicación
+                FocusScope.of(context).unfocus(); 
               },
               fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                 return TextField(
@@ -341,15 +466,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (val) {
-                    // Si el usuario borra el texto, quitamos el ID seleccionado
                     if (val.isEmpty) {
                       setState(() => _selectedLugarId = null);
+                      _guardarBorrador();
                     }
                   },
                 );
               },
             ),
-            // --------------------------------------------------------
 
             const SizedBox(height: 20),
             const Divider(),
@@ -404,7 +528,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               ),
             const SizedBox(height: 30),
 
-            if (_isLoading)
+            if (_isSubmitting)
               const Center(child: CircularProgressIndicator())
             else
               ElevatedButton.icon(

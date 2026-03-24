@@ -15,9 +15,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   String _ubicacionExacta = "Cargando...";
   bool _isLoading = true;
   
-  // --- VARIABLES DE PERMISOS ---
+  // --- VARIABLES DE PERMISOS Y ESTADO ---
   bool _isAdmin = false;
   String _estadoActual = 'pendiente';
+
+  // --- NUEVAS VARIABLES PARA REACCIONES ---
+  bool _yaReacciono = false;
+  int _contadorReacciones = 0;
 
   // Lista de estados permitidos en el sistema
   final List<String> _estadosDisponibles = ['pendiente', 'en proceso', 'resuelto'];
@@ -33,7 +37,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       final supabase = Supabase.instance.client;
       final currentUserId = supabase.auth.currentUser!.id;
 
-      // 1. Verificamos si el usuario actual es administrador buscando su rol en 'perfiles'
+      // 1. Verificamos si el usuario actual es administrador
       try {
         final currentUserData = await supabase
             .from('perfiles')
@@ -64,11 +68,24 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         cat_lugares (nombre)
       ''').eq('reporte_id', widget.reporteId).maybeSingle();
 
+      // 4. NUEVO: Verificamos si el usuario actual ya reaccionó a este reporte
+      final reaccionData = await supabase
+          .from('reacciones')
+          .select('id')
+          .eq('reporte_id', widget.reporteId)
+          .eq('usuario_id', currentUserId)
+          .maybeSingle();
+
       if (mounted) {
         setState(() {
           _reporteCompleto = reporteData;
           _estadoActual = reporteData['estado'] ?? 'pendiente';
-          _ubicacionExacta = ubicacionData?['cat_lugares']?['nombre'] ?? 'Ubicación no especificada';
+          _ubicacionExacta = ubicacionData?['cat_lugares']?['nombre'] ?? 'Ubicación no especificada';
+          
+          // Guardamos el conteo inicial y si ya había reaccionado
+          _contadorReacciones = reporteData['reaccion_count'] ?? 0;
+          _yaReacciono = reaccionData != null; // Si encuentra un ID, significa que ya reaccionó
+          
           _isLoading = false;
         });
       }
@@ -80,11 +97,49 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  // --- NUEVA FUNCIÓN PARA EL BOTÓN DE "ME GUSTA" ---
+  Future<void> _toggleReaccion() async {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser!.id;
+
+    // Cambiamos la interfaz inmediatamente para que se sienta instantáneo (Optimistic UI)
+    setState(() {
+      _yaReacciono = !_yaReacciono;
+      _contadorReacciones += _yaReacciono ? 1 : -1;
+    });
+
+    try {
+      if (_yaReacciono) {
+        // Le dio a "Tengo el problema" -> Insertamos
+        await supabase.from('reacciones').insert({
+          'reporte_id': widget.reporteId,
+          'usuario_id': userId,
+        });
+      } else {
+        // Le quitó el "Tengo el problema" -> Borramos
+        await supabase
+            .from('reacciones')
+            .delete()
+            .match({'reporte_id': widget.reporteId, 'usuario_id': userId});
+      }
+    } catch (e) {
+      // Si falla por falta de internet o error, revertimos el botón a como estaba
+      if (mounted) {
+        setState(() {
+          _yaReacciono = !_yaReacciono;
+          _contadorReacciones += _yaReacciono ? 1 : -1;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al procesar tu reacción'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   // --- FUNCIÓN DEL ADMINISTRADOR PARA CAMBIAR ESTADO ---
   Future<void> _actualizarEstado(String nuevoEstado) async {
-    if (nuevoEstado == _estadoActual) return; // Si es el mismo, no hacemos nada
+    if (nuevoEstado == _estadoActual) return;
 
-    // Mostramos un indicador de carga rápido en pantalla
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Actualizando estado...'), duration: Duration(seconds: 1)),
     );
@@ -142,12 +197,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final categoria = reporte['cat_categorias'];
     final imageUrl = reporte['evidencia_url'];
     
-    // --- EXTRACCIÓN SEGURA DE DATOS DEL CREADOR ---
+    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR
     final perfilCreador = reporte['perfiles']; 
     final nombreCreador = perfilCreador?['nombre'] ?? 'Usuario Desconocido';
-    final avatarUrl = perfilCreador?['avatar_url']; // <--- AGREGA ESTA LÍNEA
+    final avatarUrl = perfilCreador?['avatar_url'];
     
-    // Dependiendo de cómo lo devuelva Supabase (lista o mapa), sacamos el número de control
     String? numeroControl;
     final dataEstudiante = perfilCreador?['estudiantes'];
     if (dataEstudiante != null) {
@@ -168,7 +222,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. IMAGEN DEL REPORTE (Ajustada para verse completa)
+            // 1. IMAGEN DEL REPORTE
             if (imageUrl != null)
               Container(
                 width: double.infinity,
@@ -229,7 +283,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       ),
                     ),
                   ] else ...[
-                     // Si no es admin, solo ve el "chip" bonito sin poder tocarlo
                     Chip(
                       label: Text(_estadoActual.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                       backgroundColor: _getColorEstado(_estadoActual),
@@ -264,10 +317,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     child: Row(
                       children: [
                         CircleAvatar(
-                          radius: 24, // Lo hacemos un poquito más grande para que se vea bien la foto
+                          radius: 24,
                           backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
                           backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                          child: avatarUrl == null ? const Icon(Icons.person, color: Color(0xFF800000)) : null,
+                          child: avatarUrl == null ? const Icon(Icons.person, color:  Color(0xFF800000)) : null,
                         ),
                         const SizedBox(width: 15),
                         Expanded(
@@ -304,6 +357,53 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     reporte['descripcion'] ?? 'Sin descripción adicional.',
                     style: const TextStyle(fontSize: 16),
                   ),
+                  
+                  const SizedBox(height: 30),
+                  const Divider(),
+                  const SizedBox(height: 10),
+
+                  // 6. ¡NUEVO! SECCIÓN DE REACCIONES EN LA PARTE INFERIOR
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Lado Izquierdo: Contador visual
+                      Row(
+                        children: [
+                          Icon(Icons.group, color: Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Text(
+                            "$_contadorReacciones ${_contadorReacciones == 1 ? 'persona tiene' : 'personas tienen'}\neste problema",
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey[800]),
+                          ),
+                        ],
+                      ),
+                      
+                      // Lado Derecho: El botón interactivo
+                      ElevatedButton.icon(
+                        onPressed: _toggleReaccion,
+                        icon: Icon(
+                          _yaReacciono ? Icons.check_circle : Icons.warning_amber_rounded,
+                          color: _yaReacciono ? Colors.white : const Color(0xFF800000),
+                        ),
+                        label: Text(
+                          _yaReacciono ? "Ya reportado" : "A mí también",
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _yaReacciono ? const Color(0xFF800000) : Colors.white,
+                          foregroundColor: _yaReacciono ? Colors.white : const Color(0xFF800000),
+                          elevation: _yaReacciono ? 2 : 0,
+                          side: BorderSide(
+                            color: _yaReacciono ? Colors.transparent : const Color(0xFF800000),
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 40),
                 ],
               ),

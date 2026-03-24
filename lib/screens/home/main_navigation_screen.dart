@@ -18,10 +18,9 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _indiceActual = 0;
 
-  // Esta llave maestra nos permite ejecutar funciones del HomeScreen desde aquí
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
 
-  // Variables del usuario para el perfil
+  // Variables de estado interno para conservar la sesión en toda la app
   String _nombreUsuario = 'Cargando...';
   String _rolUsuario = '';
   String? _avatarUrl;
@@ -89,16 +88,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
+  // --- FUNCIÓN QUE CONSTRUYE LA PANTALLA CORRECTA ---
   Widget _construirPantalla() {
-    // Solo alternamos entre Inicio (0) y Perfil (3)
     if (_indiceActual == 3) {
       return ProfileScreen(
         nombre: _nombreUsuario,
         rol: _rolUsuario,
         avatarUrl: _avatarUrl,
+        
+        // ¡LA MAGIA OCURRE AQUÍ!
+        // Escuchamos los callbacks del Perfil y actualizamos la barra principal
+        onNombreCambiado: (nuevoNombre) {
+          setState(() => _nombreUsuario = nuevoNombre);
+        },
+        onAvatarCambiado: (nuevaUrl) {
+          setState(() => _avatarUrl = nuevaUrl);
+        },
       );
     }
-    // Pasamos la llave al HomeScreen para poder controlarlo
+    
+    // Si no es el perfil, mostramos el Home
     return HomeScreen(key: _homeKey);
   }
 
@@ -106,7 +115,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      // AQUÍ ESTÁ EL CAMBIO PARA QUITAR EL WARNING
       onPopInvokedWithResult: (bool didPop, Object? result) async {
         if (didPop) return;
         await _salirDeLaApp();
@@ -117,22 +125,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           selectedIndex: _indiceActual,
           onDestinationSelected: (int index) async {
             if (index == 1) {
-              // Botón de Buscar: Abrimos los filtros en el Home usando la llave maestra
               _homeKey.currentState?.abrirPantallaFiltros();
             } else if (index == 2) {
-              // Botón de Reportar: Abrimos la pantalla
               await Navigator.push(
                 context,
                 MaterialPageRoute(
                     builder: (context) => const CreateReportScreen()),
               );
-              // Al regresar, le decimos al Home que recargue la lista
               _homeKey.currentState?.cargarReportes();
-              
-              // Nos aseguramos de regresar el botón visual al inicio
               setState(() => _indiceActual = 0);
             } else {
-              // Botones de Inicio (0) y Perfil (3): Cambiamos la pantalla base
               setState(() => _indiceActual = index);
             }
           },

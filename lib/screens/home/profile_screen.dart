@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart'; 
 import '../auth/login_screen.dart'; 
 
 class ProfileScreen extends StatefulWidget {
   final String nombre;
-  final String rol; // <-- ¡Regresamos el rol!
+  final String rol; 
   final String? avatarUrl;
+  
+  // ¡NUEVO! Los "teléfonos" para avisarle al menú principal de los cambios
+  final Function(String)? onNombreCambiado; 
+  final Function(String)? onAvatarCambiado;
 
   const ProfileScreen({
     super.key, 
     required this.nombre, 
-    required this.rol, // <-- Lo pedimos aquí
-    this.avatarUrl
+    required this.rol, 
+    this.avatarUrl,
+    this.onNombreCambiado,
+    this.onAvatarCambiado,
   });
 
   @override
@@ -21,6 +28,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   String? _currentAvatarUrl;
+  String _nombreActual = ''; 
   bool _isUploading = false;
   final ImagePicker _picker = ImagePicker();
   
@@ -29,10 +37,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
     final usuarioActual = Supabase.instance.client.auth.currentUser;
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
+
+    _cargarPerfilFresco();
+  }
+
+  Future<void> _cargarPerfilFresco() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = supabase.auth.currentUser!.id;
+      
+      final data = await supabase
+          .from('perfiles')
+          .select('nombre, avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+
+      if (data != null && mounted) {
+        setState(() {
+          _nombreActual = data['nombre'] ?? _nombreActual;
+          if (data['avatar_url'] != null) {
+            _currentAvatarUrl = data['avatar_url']; 
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("Error recargando perfil: $e");
+    }
+  }
+
+  Future<void> _cambiarNombre() async {
+    final controller = TextEditingController(text: _nombreActual);
+    
+    final nuevoNombre = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Editar Nombre"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: "Escribe tu nombre completo",
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF800000), 
+              foregroundColor: Colors.white
+            ),
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text("Guardar"),
+          ),
+        ],
+      ),
+    );
+
+    if (nuevoNombre != null && nuevoNombre.isNotEmpty && nuevoNombre != _nombreActual) {
+      try {
+        final supabase = Supabase.instance.client;
+        final userId = supabase.auth.currentUser!.id;
+        
+        await supabase.from('perfiles').update({'nombre': nuevoNombre}).eq('id', userId);
+        
+        setState(() => _nombreActual = nuevoNombre);
+        
+        // ¡AVISAMOS AL MENÚ QUE EL NOMBRE CAMBIÓ!
+        if (widget.onNombreCambiado != null) {
+          widget.onNombreCambiado!(nuevoNombre);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('¡Nombre actualizado con éxito!'), backgroundColor: Colors.green)
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al actualizar nombre: $e'), backgroundColor: Colors.red)
+          );
+        }
+      }
+    }
   }
 
   Future<void> _cambiarFoto() async {
@@ -51,20 +147,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final imageBytes = await image.readAsBytes();
 
+      // SOFT RESET SUPABASE
       await supabase.storage.from('avatars').uploadBinary(
             rutaArchivo,
             imageBytes,
-            fileOptions: FileOptions(cacheControl: '3600', upsert: true, contentType: 'image/$extension'),
+            fileOptions: FileOptions(cacheControl: '0', upsert: true, contentType: 'image/$extension'),
           );
 
       final imageUrl = supabase.storage.from('avatars').getPublicUrl(rutaArchivo);
 
       await supabase.from('perfiles').update({'avatar_url': imageUrl}).eq('id', userId);
 
+      // SOFT RESET FLUTTER CACHÉ
+      await CachedNetworkImage.evictFromCache(imageUrl);
+
       setState(() {
         _currentAvatarUrl = imageUrl;
         _isUploading = false;
       });
+
+      // ¡AVISAMOS AL MENÚ QUE LA FOTO CAMBIÓ!
+      if (widget.onAvatarCambiado != null) {
+        widget.onAvatarCambiado!(imageUrl);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -127,14 +232,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             const SizedBox(height: 20),
             
-            // --- FOTO DE PERFIL ---
             Stack(
               alignment: Alignment.bottomRight,
               children: [
                 CircleAvatar(
                   radius: 70,
                   backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                  backgroundImage: _currentAvatarUrl != null ? NetworkImage(_currentAvatarUrl!) : null,
+                  backgroundImage: _currentAvatarUrl != null ? CachedNetworkImageProvider(_currentAvatarUrl!) : null,
                   child: _isUploading
                       ? const CircularProgressIndicator(color: Color(0xFF800000))
                       : _currentAvatarUrl == null 
@@ -162,7 +266,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 15),
 
-            // --- ETIQUETA DEL ROL (Justo debajo de la foto) ---
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
@@ -182,13 +285,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             
             const SizedBox(height: 30),
 
-            // --- CAMPOS DE SOLO LECTURA ---
             TextField(
-              controller: TextEditingController(text: widget.nombre),
+              controller: TextEditingController(text: _nombreActual),
               readOnly: true, 
               decoration: InputDecoration(
                 labelText: "Nombre Completo",
                 prefixIcon: const Icon(Icons.badge, color: Colors.grey),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                  onPressed: _cambiarNombre,
+                  tooltip: "Editar nombre",
+                ),
                 border: const OutlineInputBorder(),
                 filled: true,
                 fillColor: Colors.grey[100],
@@ -211,7 +318,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 50),
             
-            // --- BOTÓN DE CERRAR SESIÓN ---
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(

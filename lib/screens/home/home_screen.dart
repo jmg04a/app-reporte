@@ -1,5 +1,8 @@
+import 'dart:convert'; // Para la memoria caché
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Para guardar datos localmente
+import 'package:cached_network_image/cached_network_image.dart'; // Para la caché de imágenes
 import '../reportes/report_detail_screen.dart'; 
 import '../reportes/filter_screen.dart';
 
@@ -7,7 +10,7 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => HomeScreenState(); // ¡Hicimos el estado público!
+  State<HomeScreen> createState() => HomeScreenState(); 
 }
 
 class HomeScreenState extends State<HomeScreen> {
@@ -23,9 +26,26 @@ class HomeScreenState extends State<HomeScreen> {
     cargarReportes(); 
   }
 
-  // ¡Hicimos esta función pública para que el menú principal pueda recargarla!
+  // --- FUNCIÓN CON CACHÉ INTELIGENTE ---
   Future<void> cargarReportes() async {
-    setState(() => _isLoading = true);
+    // 1. INTENTAR LEER LA CACHÉ LOCAL PRIMERO
+    final prefs = await SharedPreferences.getInstance();
+    final datosGuardados = prefs.getString('reportes_cache');
+
+    if (datosGuardados != null && _todosLosReportes.isEmpty) {
+      if (mounted) {
+        setState(() {
+          List<dynamic> jsonList = jsonDecode(datosGuardados);
+          _todosLosReportes = List<Map<String, dynamic>>.from(jsonList);
+          _aplicarFiltros();
+          _isLoading = false; 
+        });
+      }
+    } else {
+      setState(() => _isLoading = true);
+    }
+
+    // 2. BUSCAR DATOS FRESCOS EN SUPABASE
     try {
       final supabase = Supabase.instance.client;
       final response = await supabase
@@ -48,11 +68,15 @@ class HomeScreenState extends State<HomeScreen> {
           _aplicarFiltros(); 
           _isLoading = false;
         });
+        
+        // Guardar la nueva respuesta en el celular
+        prefs.setString('reportes_cache', jsonEncode(response));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
         setState(() => _isLoading = false);
+        // Opcional: Mostrar un mensaje pequeño si está offline, pero ya cargó caché
+        debugPrint('Viendo datos sin conexión: $e');
       }
     }
   }
@@ -118,7 +142,6 @@ class HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ¡Hicimos esta función pública para que el menú principal pueda abrirla!
   Future<void> abrirPantallaFiltros() async {
     final filtrosElegidos = await Navigator.push<Map<String, dynamic>>(
       context,
@@ -250,29 +273,62 @@ class HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(child: Text(nombreCategoria, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
-                                if (reacciones > 0)
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.favorite, color: Colors.red, size: 14),
-                                      const SizedBox(width: 4),
-                                      Text(reacciones.toString(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
-                                    ],
-                                  )
                               ],
                             ),
                           ),
-                          trailing: imageUrl != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    imageUrl,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.grey),
-                                  ),
-                                )
-                              : const SizedBox(width: 50, height: 50, child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                          
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min, 
+                            children: [
+                              if (reacciones > 0) 
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          reacciones.toString(),
+                                          style: const TextStyle(
+                                            fontSize: 15, 
+                                            fontWeight: FontWeight.bold, 
+                                            color: Color(0xFF800000)
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.group, size: 16, color: Color(0xFF800000)), 
+                                      ],
+                                    ),
+                                    const Text(
+                                      "Tengo el mismo\nproblema", 
+                                      style: TextStyle(fontSize: 9, color: Colors.grey, height: 1.1),
+                                      textAlign: TextAlign.right,
+                                    ),
+                                  ],
+                                ),
+                                
+                              const SizedBox(width: 12), 
+                              
+                              // --- IMPLEMENTACIÓN DE CACHED NETWORK IMAGE ---
+                              imageUrl != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: CachedNetworkImage(
+                                        imageUrl: imageUrl,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        placeholder: (context, url) => const SizedBox(
+                                          width: 50, height: 50, 
+                                          child: Center(child: CircularProgressIndicator(strokeWidth: 2))
+                                        ),
+                                        errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
+                                      ),
+                                    )
+                                  : const SizedBox(width: 50, height: 50, child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                            ],
+                          ),
                           onTap: () async {
                             await Navigator.push(
                               context,
