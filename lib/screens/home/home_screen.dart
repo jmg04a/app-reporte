@@ -6,6 +6,7 @@ import '../reportes/report_detail_screen.dart';
 import '../reportes/filter_screen.dart';
 import 'profile_screen.dart'; // Asegúrate de importar la pantalla que acabamos de crear
 import 'package:flutter/foundation.dart';
+import 'dart:io'; // <-- Necesario para detectar Windows y usar exit(0)
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -81,8 +82,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirmar == true) {
-      SystemNavigator.pop(); // Esto cierra la app de forma nativa en Android
+      // Si estamos en la Web (aunque el botón lo tienes oculto para web, es buena práctica validarlo)
+      if (kIsWeb) {
+        return; 
+      } 
+      // Si es Android o iOS, usamos SystemNavigator
+      else if (Platform.isAndroid || Platform.isIOS) {
+        SystemNavigator.pop();
+      } 
+      // Si es Windows, Mac o Linux, forzamos el cierre nativo
+      else {
+        exit(0);
+      }
     }
+    
   }
 
   Future<void> _cargarReportes() async {
@@ -278,9 +291,10 @@ class _HomeScreenState extends State<HomeScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: Icon(Icons.filter_alt, color: tieneFiltrosActivos ? Colors.yellow : Colors.white),
+            // Cambiamos Icons.filter_alt por Icons.search
+            icon: Icon(Icons.search, color: tieneFiltrosActivos ? Colors.yellow : Colors.white), 
             onPressed: _abrirPantallaFiltros,
-            tooltip: "Filtros Avanzados",
+            tooltip: "Busqueda y filtros", // Opcional: también puedes actualizar el texto emergente
           ),
           // --- ESTE BOTÓN AHORA CIERRA LA APLICACIÓN ---
           // --- CONDICIÓN DEFINITIVA: SOLO MOSTRAR EN ANDROID / WINDOWS ---
