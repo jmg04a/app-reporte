@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../home/home_screen.dart';
+import '../home/main_navigation_screen.dart';
 import '../auth/register_screen.dart';
 import '../auth/forgot_password_screen.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -50,7 +51,7 @@ Future<void> _iniciarSesion() async {
       if (mounted) {
         Navigator.pushReplacement(
           context, 
-          MaterialPageRoute(builder: (context) => const HomeScreen())
+          MaterialPageRoute(builder: (context) => const MainNavigationScreen())
         );
       }
       

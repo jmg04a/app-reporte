@@ -1,91 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Importante para cerrar la aplicación
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../reportes/create_report_screen.dart';
 import '../reportes/report_detail_screen.dart'; 
 import '../reportes/filter_screen.dart';
-import 'profile_screen.dart'; // Asegúrate de importar la pantalla que acabamos de crear
-import 'package:flutter/foundation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState(); // ¡Hicimos el estado público!
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _todosLosReportes = [];
   List<Map<String, dynamic>> _reportesFiltrados = [];
   bool _isLoading = true;
 
   Map<String, dynamic> _filtrosActivos = {};
-  
-  // --- VARIABLES PARA EL USUARIO ---
-  String _nombreUsuario = 'Cargando...';
-  String _rolUsuario = '';
-  String? _avatarUrl; // Agregamos la variable de la foto
 
   @override
   void initState() {
     super.initState();
-    _cargarDatosUsuario(); 
-    _cargarReportes(); 
+    cargarReportes(); 
   }
 
-  Future<void> _cargarDatosUsuario() async {
-    try {
-      final supabase = Supabase.instance.client;
-      final userId = supabase.auth.currentUser?.id;
-      
-      if (userId != null) {
-        // Ahora también le pedimos el 'avatar_url' a la base de datos
-        final userData = await supabase
-            .from('perfiles')
-            .select('nombre, rol, avatar_url')
-            .eq('id', userId)
-            .maybeSingle();
-        
-        if (userData != null && mounted) {
-          setState(() {
-            _nombreUsuario = userData['nombre'] ?? 'Usuario Desconocido';
-            _rolUsuario = userData['rol'] ?? 'usuario';
-            _avatarUrl = userData['avatar_url'];
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Error al cargar datos del usuario: $e");
-    }
-  }
-
-  // --- NUEVA FUNCIÓN: SALIR DE LA APLICACIÓN ---
-Future<void> _salirDeLaApp() async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Salir de la App"),
-        content: const Text("¿Estás seguro de que deseas cerrar la aplicación?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF800000), foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Sí, salir"),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmar == true) {
-      SystemNavigator.pop(); // Cierra la app en Android
-    }
-  }
-
-  Future<void> _cargarReportes() async {
+  // ¡Hicimos esta función pública para que el menú principal pueda recargarla!
+  Future<void> cargarReportes() async {
     setState(() => _isLoading = true);
     try {
       final supabase = Supabase.instance.client;
@@ -179,7 +118,8 @@ Future<void> _salirDeLaApp() async {
     });
   }
 
-  Future<void> _abrirPantallaFiltros() async {
+  // ¡Hicimos esta función pública para que el menú principal pueda abrirla!
+  Future<void> abrirPantallaFiltros() async {
     final filtrosElegidos = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
@@ -232,70 +172,12 @@ Future<void> _salirDeLaApp() async {
 
     return Scaffold(
       appBar: AppBar(
-        // --- AQUÍ CONVERTIMOS LA BARRA DE TÍTULO EN UN BOTÓN INTERACTIVO ---
-        title: GestureDetector(
-          onTap: () {
-            // Al tocar el perfil, abrimos la nueva pantalla
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ProfileScreen(
-                  nombre: _nombreUsuario,
-                  rol: _rolUsuario,
-                  avatarUrl: _avatarUrl,
-                ),
-              ),
-            );
-          },
-          child: Row(
-            children: [
-              // Avatar pequeño
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white24,
-                backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
-                child: _avatarUrl == null ? const Icon(Icons.person, color: Colors.white, size: 20) : null,
-              ),
-              const SizedBox(width: 10),
-              // Nombre y Rol
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Panel de Reportes", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text(
-                      "$_nombreUsuario ${_rolUsuario == 'admin' ? '(Admin)' : ''}",
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal, color: Colors.white70),
-                      overflow: TextOverflow.ellipsis, // Si el nombre es muy largo, lo corta con "..."
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+        title: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF800000), 
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            // Cambiamos Icons.filter_alt por Icons.search
-            icon: Icon(Icons.search, color: tieneFiltrosActivos ? Colors.yellow : Colors.white), 
-            onPressed: _abrirPantallaFiltros,
-            tooltip: "Busqueda y filtros", // Opcional: también puedes actualizar el texto emergente
-          ),
-          // --- ESTE BOTÓN AHORA CIERRA LA APLICACIÓN ---
-          // --- CONDICIÓN DEFINITIVA: SOLO MOSTRAR EN ANDROID / WINDOWS ---
-          // ESTO CREA EL BOTÓN ÚNICA Y EXCLUSIVAMENTE EN ANDROID NATIVO
-          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
-            IconButton(
-              icon: const Icon(Icons.exit_to_app),
-              onPressed: _salirDeLaApp,
-              tooltip: "Salir de la Aplicación",
-            )
-        ],
       ),
       body: RefreshIndicator(
-        onRefresh: _cargarReportes,
+        onRefresh: cargarReportes,
         color: const Color(0xFF800000),
         child: _isLoading
             ? const Center(child: CircularProgressIndicator()) 
@@ -306,7 +188,7 @@ Future<void> _salirDeLaApp() async {
                       const Icon(Icons.search_off, size: 80, color: Colors.grey),
                       const SizedBox(height: 16),
                       Text(
-                        tieneFiltrosActivos ? "No se encontraron reportes con estos filtros." : "No has hecho ningún reporte aún.", 
+                        tieneFiltrosActivos ? "No se encontraron reportes con estos filtros." : "No hay ningún reporte aún.", 
                         textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontSize: 16)
                       ),
                       if (tieneFiltrosActivos)
@@ -396,25 +278,12 @@ Future<void> _salirDeLaApp() async {
                               context,
                               MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: reporte['id'])),
                             );
-                            _cargarReportes(); 
+                            cargarReportes(); 
                           },
                         ),
                       );
                     },
                   ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF800000),
-        foregroundColor: Colors.white,
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const CreateReportScreen()),
-          );
-          _cargarReportes();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text("Nuevo Reporte"),
       ),
     );
   }
