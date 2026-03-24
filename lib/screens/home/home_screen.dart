@@ -6,7 +6,6 @@ import '../reportes/report_detail_screen.dart';
 import '../reportes/filter_screen.dart';
 import 'profile_screen.dart'; // Asegúrate de importar la pantalla que acabamos de crear
 import 'package:flutter/foundation.dart';
-import 'dart:io'; // <-- Necesario para detectar Windows y usar exit(0)
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -61,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // --- NUEVA FUNCIÓN: SALIR DE LA APLICACIÓN ---
-  Future<void> _salirDeLaApp() async {
+Future<void> _salirDeLaApp() async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -82,20 +81,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirmar == true) {
-      // Si estamos en la Web (aunque el botón lo tienes oculto para web, es buena práctica validarlo)
-      if (kIsWeb) {
-        return; 
-      } 
-      // Si es Android o iOS, usamos SystemNavigator
-      else if (Platform.isAndroid || Platform.isIOS) {
-        SystemNavigator.pop();
-      } 
-      // Si es Windows, Mac o Linux, forzamos el cierre nativo
-      else {
-        exit(0);
-      }
+      SystemNavigator.pop(); // Cierra la app en Android
     }
-    
   }
 
   Future<void> _cargarReportes() async {
@@ -298,12 +285,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // --- ESTE BOTÓN AHORA CIERRA LA APLICACIÓN ---
           // --- CONDICIÓN DEFINITIVA: SOLO MOSTRAR EN ANDROID / WINDOWS ---
-          if (!kIsWeb && defaultTargetPlatform != TargetPlatform.iOS)
-          IconButton(
-            icon: const Icon(Icons.exit_to_app),
-            onPressed: _salirDeLaApp,
-            tooltip: "Salir de la Aplicación",
-          )
+          // ESTO CREA EL BOTÓN ÚNICA Y EXCLUSIVAMENTE EN ANDROID NATIVO
+          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
+            IconButton(
+              icon: const Icon(Icons.exit_to_app),
+              onPressed: _salirDeLaApp,
+              tooltip: "Salir de la Aplicación",
+            )
         ],
       ),
       body: RefreshIndicator(
