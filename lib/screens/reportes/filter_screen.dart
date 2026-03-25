@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert'; // Para convertir a JSON
+import 'package:shared_preferences/shared_preferences.dart'; // Para el disco duro local
 
 class FilterScreen extends StatefulWidget {
   final Map<String, dynamic> filtrosActuales;
@@ -40,41 +42,71 @@ class _FilterScreenState extends State<FilterScreen> {
   }
 
   Future<void> _cargarCatalogos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final catsCache = prefs.getString('categorias_cache');
+    final lugsCache = prefs.getString('lugares_cache');
+
+    // 1. CARGA SÚPER RÁPIDA DESDE EL TELÉFONO (Si ya habíamos entrado antes)
+    if (catsCache != null && lugsCache != null) {
+      final catsLocal = jsonDecode(catsCache);
+      final lugsLocal = jsonDecode(lugsCache);
+      _procesarYMostrarCatalogos(catsLocal, lugsLocal);
+    }
+
+    // 2. ACTUALIZACIÓN SILENCIOSA DE FONDO (O primera vez si no hay caché)
     try {
       final supabase = Supabase.instance.client;
-      final cats = await supabase.from('cat_categorias').select('id, nombre').order('nombre');
       
-      // Descargamos los lugares para el buscador inteligente
-      final lugs = await supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre');
+      // Usamos Future.wait para descargar ambas cosas al mismo tiempo (el doble de rápido)
+      final respuestas = await Future.wait([
+        supabase.from('cat_categorias').select('id, nombre').order('nombre'),
+        supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre')
+      ]);
 
-      List<Map<String, dynamic>> lugaresFormateados = [];
-      for (var lugar in lugs) {
-        String nombreMostrar = lugar['nombre'];
-        
-        if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
-          final padre = lugs.firstWhere(
-            (element) => element['id'] == lugar['parent_id'], 
-            orElse: () => {'nombre': ''}
-          );
-          if (padre['nombre'] != '') {
-            nombreMostrar = '$nombreMostrar (${padre['nombre']})';
-          }
-        }
-        lugaresFormateados.add({
-          'id': lugar['id'],
-          'nombreBuscable': nombreMostrar,
-        });
-      }
+      final catsNube = respuestas[0];
+      final lugsNube = respuestas[1];
 
-      if (mounted) {
-        setState(() {
-          _categorias = List<Map<String, dynamic>>.from(cats);
-          _lugares = lugaresFormateados;
-          _isLoadingData = false;
-        });
-      }
+      // Guardamos en el disco duro para el futuro
+      prefs.setString('categorias_cache', jsonEncode(catsNube));
+      prefs.setString('lugares_cache', jsonEncode(lugsNube));
+
+      // Actualizamos la pantalla con los datos más frescos
+      _procesarYMostrarCatalogos(catsNube, lugsNube);
     } catch (e) {
-      if (mounted) setState(() => _isLoadingData = false);
+      // Si el alumno no tiene internet en este momento, no importa.
+      // Si ya tenía la caché cargada, la pantalla seguirá funcionando perfecto offline.
+      if (mounted && _categorias.isEmpty) setState(() => _isLoadingData = false);
+    }
+  }
+
+  // Separamos la lógica de formato para no repetir código
+  void _procesarYMostrarCatalogos(List<dynamic> catsRaw, List<dynamic> lugsRaw) {
+    List<Map<String, dynamic>> lugaresFormateados = [];
+    
+    for (var lugar in lugsRaw) {
+      String nombreMostrar = lugar['nombre'];
+      
+      if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
+        final padre = lugsRaw.firstWhere(
+          (element) => element['id'] == lugar['parent_id'], 
+          orElse: () => {'nombre': ''}
+        );
+        if (padre['nombre'] != '') {
+          nombreMostrar = '$nombreMostrar (${padre['nombre']})';
+        }
+      }
+      lugaresFormateados.add({
+        'id': lugar['id'],
+        'nombreBuscable': nombreMostrar,
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _categorias = List<Map<String, dynamic>>.from(catsRaw);
+        _lugares = lugaresFormateados;
+        _isLoadingData = false; // Apagamos la rueda de carga si estaba encendida
+      });
     }
   }
 
@@ -103,7 +135,23 @@ class _FilterScreenState extends State<FilterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Buscamos el nombre del lugar previo (si es que había uno guardado) para mostrarlo en la barra
+    // --- INICIO DE SEGUROS DE VIDA PARA EVITAR CRASHES ---
+    
+    // 1. Seguro para Categorías
+    // Verificamos si el ID guardado realmente existe en la base de datos actual
+    bool categoriaExiste = _selectedCategoriaId == null || 
+        _categorias.any((c) => c['id'] == _selectedCategoriaId);
+    int? safeCategoriaId = categoriaExiste ? _selectedCategoriaId : null;
+
+    // 2. Seguro para Estados
+    const estadosValidos = ['todos', 'pendiente', 'en proceso', 'finalizado'];
+    String safeEstado = estadosValidos.contains(_selectedEstado) ? _selectedEstado : 'todos';
+
+    // 3. Seguro para Ordenamiento
+    const ordenValidos = ['recientes', 'desc', 'asc'];
+    String safeOrden = ordenValidos.contains(_selectedOrdenReacciones) ? _selectedOrdenReacciones : 'recientes';
+
+    // 4. Buscamos el nombre del lugar previo (Este ya lo tenías bien asegurado con el orElse)
     String textLugarInicial = '';
     if (_selectedLugarId != null && _lugares.isNotEmpty) {
       final lugarEncontrado = _lugares.firstWhere(
@@ -112,6 +160,7 @@ class _FilterScreenState extends State<FilterScreen> {
       );
       textLugarInicial = lugarEncontrado['nombreBuscable'];
     }
+    // --- FIN DE SEGUROS DE VIDA ---
 
     return Scaffold(
       appBar: AppBar(
@@ -150,7 +199,8 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 10),
                   
                   DropdownButtonFormField<int>(
-                    initialValue: _selectedCategoriaId,
+                    // Usamos nuestra variable segura en lugar del _selectedCategoriaId directo
+                    initialValue: safeCategoriaId, 
                     decoration: const InputDecoration(labelText: "Categoría", prefixIcon: Icon(Icons.category), border: OutlineInputBorder()),
                     items: [
                       const DropdownMenuItem<int>(value: null, child: Text("Todas las categorías")),
@@ -160,7 +210,6 @@ class _FilterScreenState extends State<FilterScreen> {
                   ),
                   const SizedBox(height: 15),
                   
-                  // --- NUEVO BUSCADOR DE LUGAR ---
                   Autocomplete<Map<String, dynamic>>(
                     initialValue: TextEditingValue(text: textLugarInicial),
                     optionsBuilder: (TextEditingValue textEditingValue) {
@@ -187,7 +236,6 @@ class _FilterScreenState extends State<FilterScreen> {
                           hintText: "Escribe el edificio o aula...",
                           prefixIcon: const Icon(Icons.location_on),
                           border: const OutlineInputBorder(),
-                          // Agregamos una "X" para borrar fácilmente el filtro de ubicación
                           suffixIcon: _selectedLugarId != null
                               ? IconButton(
                                   icon: const Icon(Icons.clear, color: Colors.grey),
@@ -204,12 +252,12 @@ class _FilterScreenState extends State<FilterScreen> {
                       );
                     },
                   ),
-                  // -------------------------------
                   
                   const SizedBox(height: 15),
 
                   DropdownButtonFormField<String>(
-                    initialValue: _selectedEstado,
+                    // Variable segura
+                    initialValue: safeEstado,
                     decoration: const InputDecoration(labelText: "Estado", prefixIcon: Icon(Icons.flag), border: OutlineInputBorder()),
                     items: const [
                       DropdownMenuItem(value: 'todos', child: Text("Todos los estados")),
@@ -226,7 +274,8 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 10),
                   
                   DropdownButtonFormField<String>(
-                    initialValue: _selectedOrdenReacciones,
+                    // Variable segura
+                    initialValue: safeOrden,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: "Ordenar por Reacciones", prefixIcon: Icon(Icons.favorite), border: OutlineInputBorder()),
                     items: const [
