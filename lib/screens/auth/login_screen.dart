@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../home/main_navigation_screen.dart';
 import '../auth/register_screen.dart';
 import '../auth/forgot_password_screen.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -39,40 +41,58 @@ Future<void> _iniciarSesion() async {
 
       // 2. Decides inteligentemente
       final emailCompleto = inputUsuario.contains('@') 
-      ? inputUsuario // Si ya tiene @, lo dejamos tal cual (el trigger de BD validará si es del ITL)
-      : inputUsuario + _dominio; // Si no tiene @, le pegamos el dominio
+      ? inputUsuario 
+      : inputUsuario + _dominio; 
 
-      // Intentamos iniciar sesión
-      await Supabase.instance.client.auth.signInWithPassword(
+      // 3. Intentamos iniciar sesión
+      final response = await Supabase.instance.client.auth.signInWithPassword(
         email: emailCompleto,
         password: _passwordController.text,
       );
 
-      if (mounted) {
+      // 4. ¡NUEVO! Guardamos el caché ANTES de revisar si la pantalla sigue viva
+      // Así aseguramos que el perfil se guarde pase lo que pase.
+      await _guardarPerfilEnCache(response.user!.id);
+
+      // 5. AHORA SÍ: Revisamos si el usuario no cerró la app mientras descargábamos
+      if (mounted) { 
         Navigator.pushReplacement(
           context, 
           MaterialPageRoute(builder: (context) => const MainNavigationScreen())
         );
       }
       
-    // AQUI ES DONDE VA TU NUEVO CODIGO (Reemplaza el catch anterior)
-    // -------------------------------------------------------
     } on AuthException catch (e) {
       if (e.message.contains("Email not confirmed")) {
         _mostrarError("¡Aún no confirmas tu correo! Revisa tu bandeja.");
       } else if (e.message.contains("Invalid login credentials")) {
         _mostrarError("Usuario o contraseña incorrectos.");
       } else {
-        _mostrarError(e.message); // Otro error de Supabase
+        _mostrarError(e.message); 
       }
-    // -------------------------------------------------------
-
     } catch (e) {
-      _mostrarError("Error inesperado: $e"); // Error de código o internet
+      _mostrarError("Error inesperado: $e"); 
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _guardarPerfilEnCache(String userId) async {
+  try {
+    final supabase = Supabase.instance.client;
+    
+    final perfil = await supabase
+        .from('perfiles')
+        .select('nombre, avatar_url, estudiantes(numero_control)')
+        .eq('id', userId)
+        .single();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('usuario_perfil', jsonEncode(perfil));
+  } catch (e) {
+    debugPrint("Error guardando caché del perfil: $e");
+  }
+}
 
   @override
   Widget build(BuildContext context) {

@@ -444,6 +444,11 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
                       memCacheWidth: 150, 
+                      // ==========================================
+                      // ¡NUEVO! Matamos las animaciones pesadas
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                      // ==========================================
                       imageBuilder: (context, imageProvider) => Container(
                         width: 50,
                         height: 50,

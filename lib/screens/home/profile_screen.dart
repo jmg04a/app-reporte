@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
-import '../auth/login_screen.dart'; 
+import '../auth/login_screen.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String nombre;
   final String rol; 
   final String? avatarUrl;
   
-  // ¡NUEVO! Los "teléfonos" para avisarle al menú principal de los cambios
   final Function(String)? onNombreCambiado; 
   final Function(String)? onAvatarCambiado;
 
@@ -37,13 +38,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    // 1. Tomamos lo que venga del Widget (por si acaso)
     _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
     final usuarioActual = Supabase.instance.client.auth.currentUser;
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
 
+    // 2. ¡NUEVO! Leemos el disco duro en 0.001 segundos para pintar la pantalla
+    _cargarPerfilDesdeCache();
+
+    // 3. Dejamos a Supabase buscando en el fondo por si cambiaste de foto en otra PC
     _cargarPerfilFresco();
+  }
+
+  // --- NUEVA LECTURA INSTANTÁNEA ---
+  Future<void> _cargarPerfilDesdeCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final perfilStr = prefs.getString('usuario_perfil');
+
+    if (perfilStr != null && mounted) {
+      final perfilCache = jsonDecode(perfilStr);
+      setState(() {
+        // Leemos del caché al instante. Si hay datos ahí, los usamos.
+        if (perfilCache['nombre'] != null) {
+          _nombreActual = perfilCache['nombre'];
+        }
+        if (perfilCache['avatar_url'] != null) {
+          _currentAvatarUrl = perfilCache['avatar_url'];
+        }
+      });
+    }
   }
 
   Future<void> _cargarPerfilFresco() async {
@@ -111,7 +136,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         
         setState(() => _nombreActual = nuevoNombre);
         
-        // ¡AVISAMOS AL MENÚ QUE EL NOMBRE CAMBIÓ!
+        // =======================================================
+        // ¡NUEVO! CACHEO DE NOMBRE
+        // =======================================================
+        final prefs = await SharedPreferences.getInstance();
+        final perfilStr = prefs.getString('usuario_perfil');
+        if (perfilStr != null) {
+          Map<String, dynamic> perfilCache = jsonDecode(perfilStr);
+          perfilCache['nombre'] = nuevoNombre;
+          await prefs.setString('usuario_perfil', jsonEncode(perfilCache));
+        } else {
+          // Si no había caché, creamos uno básico
+          await prefs.setString('usuario_perfil', jsonEncode({'nombre': nuevoNombre}));
+        }
+        // =======================================================
+
         if (widget.onNombreCambiado != null) {
           widget.onNombreCambiado!(nuevoNombre);
         }
@@ -147,7 +186,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final imageBytes = await image.readAsBytes();
 
-      // SOFT RESET SUPABASE
       await supabase.storage.from('avatars').uploadBinary(
             rutaArchivo,
             imageBytes,
@@ -158,7 +196,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await supabase.from('perfiles').update({'avatar_url': imageUrl}).eq('id', userId);
 
-      // SOFT RESET FLUTTER CACHÉ
       await CachedNetworkImage.evictFromCache(imageUrl);
 
       setState(() {
@@ -166,7 +203,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isUploading = false;
       });
 
-      // ¡AVISAMOS AL MENÚ QUE LA FOTO CAMBIÓ!
+      // =======================================================
+      // ¡NUEVO! CACHEO DE FOTO DE PERFIL
+      // =======================================================
+      final prefs = await SharedPreferences.getInstance();
+      final perfilStr = prefs.getString('usuario_perfil');
+      if (perfilStr != null) {
+        Map<String, dynamic> perfilCache = jsonDecode(perfilStr);
+        perfilCache['avatar_url'] = imageUrl;
+        await prefs.setString('usuario_perfil', jsonEncode(perfilCache));
+      } else {
+        await prefs.setString('usuario_perfil', jsonEncode({'avatar_url': imageUrl}));
+      }
+      // =======================================================
+
       if (widget.onAvatarCambiado != null) {
         widget.onAvatarCambiado!(imageUrl);
       }
@@ -186,7 +236,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _cerrarSesion(BuildContext context) async {
+ Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -207,7 +257,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmar == true) {
-      await Supabase.instance.client.auth.signOut();
+      // 1. Destruimos nuestro caché personalizado de la memoria RAM
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('usuario_perfil'); 
+
+      // 2. Intentamos destruir la sesión en Supabase
+      try {
+        // Le decimos a Supabase que intente cerrar sesión.
+        // Si no hay internet, saltará directo al bloque catch.
+        await Supabase.instance.client.auth.signOut();
+      } catch (e) {
+        // ¡Magia Offline! 
+        // Si el internet falló, forzamos el cierre local de todos modos.
+        // Esto borra el Token JWT de la memoria del celular, así que aunque
+        // el servidor no se haya enterado, el celular ya olvidó al usuario.
+        debugPrint("Fallo de red al cerrar sesión. Forzando cierre local. Error: $e");
+      }
+
+      // 3. Sin importar si hubo internet o no, sacamos al usuario a la pantalla de Login
       if (context.mounted) {
         Navigator.pushAndRemoveUntil(
           context,

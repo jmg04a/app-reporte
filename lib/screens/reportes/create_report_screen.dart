@@ -47,54 +47,74 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     super.dispose();
   }
 
-  Future<void> _cargarDatosIniciales() async {
+Future<void> _cargarDatosIniciales() async {
+    final prefs = await SharedPreferences.getInstance();
+    final catsCache = prefs.getString('categorias_cache');
+    final lugsCache = prefs.getString('lugares_cache');
+
+    // 1. CARGA SÚPER RÁPIDA DESDE EL DISCO DURO
+    if (catsCache != null && lugsCache != null) {
+      final catsLocal = jsonDecode(catsCache);
+      final lugsLocal = jsonDecode(lugsCache);
+      _procesarYMostrarCatalogos(catsLocal, lugsLocal);
+    }
+
+    // 2. ACTUALIZACIÓN SILENCIOSA DE FONDO
     try {
       final supabase = Supabase.instance.client;
       
-      // 1. Descargamos Categorías
-      final categoriasData = await supabase
-          .from('cat_categorias')
-          .select('id, nombre, icono, color')
-          .order('nombre');
+      final respuestas = await Future.wait([
+        supabase.from('cat_categorias').select('id, nombre, icono, color').order('nombre'),
+        supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre')
+      ]);
 
-      // 2. Descargamos Lugares
-      final lugaresData = await supabase
-          .from('cat_lugares')
-          .select('id, nombre, tipo, parent_id')
-          .order('nombre');
+      final categoriasData = respuestas[0];
+      final lugaresData = respuestas[1];
 
-      List<Map<String, dynamic>> lugaresFormateados = [];
-      for (var lugar in lugaresData) {
-        String nombreMostrar = lugar['nombre'];
-        if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
-          final padre = lugaresData.firstWhere(
-            (element) => element['id'] == lugar['parent_id'], 
-            orElse: () => {'nombre': ''}
-          );
-          if (padre['nombre'] != '') {
-            nombreMostrar = '$nombreMostrar (${padre['nombre']})';
-          }
-        }
-        lugaresFormateados.add({
-          'id': lugar['id'],
-          'nombreBuscable': nombreMostrar,
-        });
-      }
+      // Guardamos la versión más fresca para el futuro (compartido con los filtros)
+      prefs.setString('categorias_cache', jsonEncode(categoriasData));
+      prefs.setString('lugares_cache', jsonEncode(lugaresData));
 
-      if (mounted) {
-        setState(() {
-          _categorias = List<Map<String, dynamic>>.from(categoriasData);
-          _todosLosLugares = lugaresFormateados;
-        });
-      }
-
-      // 3. ¡NUEVO! Cargamos el borrador si existe, DESPUÉS de cargar los catálogos
-      await _cargarBorrador();
+      _procesarYMostrarCatalogos(categoriasData, lugaresData);
 
     } catch (e) {
-      _mostrarMensaje("Error cargando catálogos: $e", esError: true);
+      // Si falla el internet, no mostramos error si ya teníamos el caché
+      if (_categorias.isEmpty) {
+        _mostrarMensaje("Error cargando catálogos: $e", esError: true);
+      }
     } finally {
+      // 3. Cargamos el borrador (textos que el usuario estaba escribiendo)
+      await _cargarBorrador();
       if (mounted) setState(() => _isLoadingData = false);
+    }
+  }
+
+  // Separamos la lógica de formato para mantener el código limpio
+  void _procesarYMostrarCatalogos(List<dynamic> categoriasData, List<dynamic> lugaresData) {
+    List<Map<String, dynamic>> lugaresFormateados = [];
+    
+    for (var lugar in lugaresData) {
+      String nombreMostrar = lugar['nombre'];
+      if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
+        final padre = lugaresData.firstWhere(
+          (element) => element['id'] == lugar['parent_id'], 
+          orElse: () => {'nombre': ''}
+        );
+        if (padre['nombre'] != '') {
+          nombreMostrar = '$nombreMostrar (${padre['nombre']})';
+        }
+      }
+      lugaresFormateados.add({
+        'id': lugar['id'],
+        'nombreBuscable': nombreMostrar,
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _categorias = List<Map<String, dynamic>>.from(categoriasData);
+        _todosLosLugares = lugaresFormateados;
+      });
     }
   }
 
