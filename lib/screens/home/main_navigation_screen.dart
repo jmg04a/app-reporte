@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../reportes/filter_screen.dart'; // Agrega esto junto a tus otros imports
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import '../reportes/create_report_screen.dart';
@@ -124,9 +124,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         bottomNavigationBar: NavigationBar(
           selectedIndex: _indiceActual,
           onDestinationSelected: (int index) async {
+            // ==========================================
+            // ¡NUEVA LÓGICA PARA EL BOTÓN DE BÚSQUEDA!
+            // ==========================================
             if (index == 1) {
-              _homeKey.currentState?.abrirPantallaFiltros();
-            } else if (index == 2) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FilterScreen()),
+              );
+            } 
+            // ==========================================
+            else if (index == 2) {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -152,7 +160,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               label: 'Buscar',
             ),
             NavigationDestination(
-              icon: Icon(Icons.add_circle_outline),
+              icon: Icon(Icons.add),
               selectedIcon: Icon(Icons.add_circle, color: Color(0xFF800000)),
               label: 'Reportar',
             ),

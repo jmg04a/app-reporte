@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../auth/login_screen.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'mis_reportes_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String nombre;
@@ -383,7 +384,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            const SizedBox(height: 50),
+            const SizedBox(height: 40), // Reduje un poco este espacio
+            
+            // ==========================================
+            // ¡NUEVO! BOTÓN DE MIS REPORTES
+            // ==========================================
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MisReportesScreen()),
+                  );
+                },
+                icon: const Icon(Icons.list_alt),
+                label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF800000), // Guinda ITL
+                  elevation: 0,
+                  side: const BorderSide(color: Color(0xFF800000), width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 15), // Separación entre los botones
             
             SizedBox(
               width: double.infinity,

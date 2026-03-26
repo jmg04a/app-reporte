@@ -17,9 +17,6 @@ class HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _reportes = [];
   bool _isLoading = true;
 
-  Map<String, dynamic> _filtrosActivos = {};
-
-  final ScrollController _scrollController = ScrollController();
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
@@ -29,133 +26,49 @@ class HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     cargarReportes(); 
-    
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-        _cargarMasReportes(); 
-      }
-    });
+    // ¡ADIÓS AL SCROLL CONTROLLER PESADO!
   }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  // =========================================================
-  // EL CEREBRO DE BÚSQUEDA (CONSTRUCTOR DE CONSULTAS SUPABASE)
-  // =========================================================
-  PostgrestFilterBuilder<List<Map<String, dynamic>>> _construirConsultaSupabase() {
-    final supabase = Supabase.instance.client;
-    
-    // 1. Iniciamos la consulta base asegurando las relaciones (!inner) para poder filtrar
-    var query = supabase.from('reportes').select('''
-      id,
-      titulo,
-      estado,
-      evidencia_url,
-      reaccion_count,
-      categoria_id,
-      cat_categorias (id, nombre, icono, color),
-      perfiles!inner (nombre, estudiantes(numero_control)),
-      reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-    ''');
-
-    // 2. Filtro de Título (Búsqueda Parcial)
-    final titulo = _filtrosActivos['titulo']?.toString().trim() ?? '';
-    if (titulo.isNotEmpty) {
-      query = query.ilike('titulo', '%$titulo%');
-    }
-
-    // 3. Filtro de Categoría
-    final categoriaId = _filtrosActivos['categoriaId'];
-    if (categoriaId != null) {
-      query = query.eq('categoria_id', categoriaId);
-    }
-
-    // 4. Filtro de Estado
-    final estadoFiltro = _filtrosActivos['estado'] ?? 'todos';
-    if (estadoFiltro != 'todos') {
-      query = query.eq('estado', estadoFiltro);
-    }
-
-    // 5. Filtro de Ubicación
-    final lugarId = _filtrosActivos['lugarId'];
-    if (lugarId != null) {
-      query = query.eq('reporte_ubicaciones.lugar_id', lugarId);
-    }
-
-    // 6. Filtro de Usuario (Por Nombre)
-    final usuario = _filtrosActivos['usuario']?.toString().trim() ?? '';
-    if (usuario.isNotEmpty) {
-      query = query.ilike('perfiles.nombre', '%$usuario%');
-    }
-
-    return query;
-  }
-
-  // =========================================================
 
   Future<void> cargarReportes() async {
     _rangoInicio = 0;
     _hayMasDatos = true;
 
-    // Solo usamos la caché local si NO hay filtros activos (para no mezclar datos)
-    if (_filtrosActivos.isEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      final datosGuardados = prefs.getString('reportes_cache');
+    final prefs = await SharedPreferences.getInstance();
+    final datosGuardados = prefs.getString('reportes_cache');
 
-      if (datosGuardados != null && _reportes.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _reportes = List<Map<String, dynamic>>.from(jsonDecode(datosGuardados));
-            _isLoading = false; 
-          });
-        }
-      } else {
-        setState(() => _isLoading = true);
+    if (datosGuardados != null && _reportes.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _reportes = List<Map<String, dynamic>>.from(jsonDecode(datosGuardados));
+          _isLoading = false; 
+        });
       }
     } else {
       setState(() => _isLoading = true);
     }
 
     try {
-      // Obtenemos la consulta pre-armada con filtros
-      var queryBase = _construirConsultaSupabase();
-      
-      PostgrestTransformBuilder<List<Map<String, dynamic>>> queryOrdenada;
-      
-      // Aplicamos el ORDENAMIENTO desde el servidor
-      final orden = _filtrosActivos['ordenReacciones'] ?? 'recientes';
-      if (orden == 'desc') {
-        queryOrdenada = queryBase.order('reaccion_count', ascending: false).order('id', ascending: false);
-      } else if (orden == 'asc') {
-        queryOrdenada = queryBase.order('reaccion_count', ascending: true).order('id', ascending: false);
-      } else {
-        queryOrdenada = queryBase.order('id', ascending: false); // Por defecto (Recientes)
-      }
-
-      // Descargamos los primeros 15
-      final response = await queryOrdenada.range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
+      final supabase = Supabase.instance.client;
+      // Una consulta limpia y directa, sin IFs ni filtros
+      final response = await supabase.from('reportes').select('''
+        id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
+        cat_categorias (id, nombre, icono, color),
+        perfiles!inner (nombre, estudiantes(numero_control)),
+        reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
+      ''').order('id', ascending: false)
+          .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
       if (mounted) {
         setState(() {
           _reportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
-          
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
         
-        // Solo guardamos en caché si es la vista general sin filtros
-        if (_filtrosActivos.isEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          prefs.setString('reportes_cache', jsonEncode(response));
-        }
+        prefs.setString('reportes_cache', jsonEncode(response));
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
-      debugPrint('Error cargando datos: $e');
     }
   }
 
@@ -166,20 +79,14 @@ class HomeScreenState extends State<HomeScreen> {
     _rangoInicio += _cantidadPorPagina;
 
     try {
-      var queryBase = _construirConsultaSupabase();
-      
-      PostgrestTransformBuilder<List<Map<String, dynamic>>> queryOrdenada;
-      
-      final orden = _filtrosActivos['ordenReacciones'] ?? 'recientes';
-      if (orden == 'desc') {
-        queryOrdenada = queryBase.order('reaccion_count', ascending: false).order('id', ascending: false);
-      } else if (orden == 'asc') {
-        queryOrdenada = queryBase.order('reaccion_count', ascending: true).order('id', ascending: false);
-      } else {
-        queryOrdenada = queryBase.order('id', ascending: false);
-      }
-
-      final response = await queryOrdenada.range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
+      final supabase = Supabase.instance.client;
+      final response = await supabase.from('reportes').select('''
+        id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
+        cat_categorias (id, nombre, icono, color),
+        perfiles!inner (nombre, estudiantes(numero_control)),
+        reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
+      ''').order('id', ascending: false)
+          .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
       if (mounted) {
         setState(() {
@@ -197,33 +104,17 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> abrirPantallaFiltros() async {
-    final filtrosElegidos = await Navigator.push<Map<String, dynamic>>(
+  void abrirPantallaFiltros() {
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FilterScreen(filtrosActuales: _filtrosActivos),
+        builder: (context) => const FilterScreen(),
       ),
     );
-
-    if (filtrosElegidos != null) {
-      _filtrosActivos = filtrosElegidos;
-      // Cuando el usuario elige filtros, simplemente recargamos desde cero
-      // ¡El servidor hará todo el trabajo pesado!
-      cargarReportes();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    bool tieneFiltrosActivos = _filtrosActivos.isNotEmpty && (
-      _filtrosActivos['titulo']?.toString().isNotEmpty == true ||
-      _filtrosActivos['usuario']?.toString().isNotEmpty == true ||
-      _filtrosActivos['categoriaId'] != null ||
-      _filtrosActivos['lugarId'] != null ||
-      (_filtrosActivos['estado'] != null && _filtrosActivos['estado'] != 'todos') ||
-      (_filtrosActivos['ordenReacciones'] != null && _filtrosActivos['ordenReacciones'] != 'recientes')
-    );
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -237,39 +128,34 @@ class HomeScreenState extends State<HomeScreen> {
             ? const Center(child: CircularProgressIndicator()) 
             : _reportes.isEmpty
                 ? ListView( 
-                    children: [
-                      const SizedBox(height: 150),
-                      const Icon(Icons.search_off, size: 80, color: Colors.grey),
-                      const SizedBox(height: 16),
-                      Text(
-                        tieneFiltrosActivos ? "No se encontraron reportes con estos filtros." : "No hay ningún reporte aún.", 
-                        textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontSize: 16)
-                      ),
-                      if (tieneFiltrosActivos)
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: TextButton.icon(
-                            onPressed: () {
-                              setState(() => _filtrosActivos = {});
-                              cargarReportes(); // Limpiamos y recargamos
-                            },
-                            icon: const Icon(Icons.clear_all, color: Color(0xFF800000)),
-                            label: const Text("Limpiar Filtros", style: TextStyle(color: Color(0xFF800000))),
-                          ),
-                        )
+                    children: const [
+                      SizedBox(height: 150),
+                      Icon(Icons.inbox, size: 80, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
                     ],
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(12),
-                    controller: _scrollController,
-                    itemCount: _reportes.length + (_cargandoMas ? 1 : 0),
-                    itemExtent: 110.0, 
-                    addAutomaticKeepAlives: false,
+                    itemCount: _reportes.length + 1, 
                     itemBuilder: (context, index) {
                       
+                      // ¡EL NUEVO BOTÓN DE CARGAR MÁS EN EL HOME!
                       if (index == _reportes.length) {
-                        return const Center(
-                          child: CircularProgressIndicator(color: Color(0xFF800000))
+                        if (!_hayMasDatos) return const SizedBox.shrink();
+                        
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: _cargandoMas
+                            ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                            : Center(
+                                child: OutlinedButton.icon(
+                                  onPressed: _cargarMasReportes,
+                                  icon: const Icon(Icons.add, color: Color(0xFF800000)),
+                                  label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
+                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                ),
+                              ),
                         );
                       }
 
@@ -289,6 +175,12 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+// =====================================================================
+// [AQUÍ ABAJO DEBES DEJAR TU CÓDIGO INTACTO DE TarjetaReporteOptimizada]
+// =====================================================================
+// class TarjetaReporteOptimizada extends StatelessWidget { ... }
+
 
 // =====================================================================
 // TARJETA EXTRAÍDA E INDEPENDIENTE

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:convert'; // Para convertir a JSON
-import 'package:shared_preferences/shared_preferences.dart'; // Para el disco duro local
+import 'dart:convert'; 
+import 'package:shared_preferences/shared_preferences.dart'; 
+// ¡AQUÍ ESTÁ LA IMPORTACIÓN DE TU NUEVA PANTALLA!
+import 'resultados_busqueda_screen.dart'; 
 
 class FilterScreen extends StatefulWidget {
-  final Map<String, dynamic> filtrosActuales;
-
-  const FilterScreen({super.key, required this.filtrosActuales});
+  // ¡El constructor ahora está limpio! Ya no pide filtros previos
+  const FilterScreen({super.key});
 
   @override
   State<FilterScreen> createState() => _FilterScreenState();
@@ -28,17 +29,8 @@ class _FilterScreenState extends State<FilterScreen> {
   @override
   void initState() {
     super.initState();
-    _cargarFiltrosPrevios();
+    // Ya solo cargamos los catálogos, desapareció la función de filtros previos
     _cargarCatalogos();
-  }
-
-  void _cargarFiltrosPrevios() {
-    _usuarioController.text = widget.filtrosActuales['usuario'] ?? '';
-    _tituloController.text = widget.filtrosActuales['titulo'] ?? '';
-    _selectedCategoriaId = widget.filtrosActuales['categoriaId'];
-    _selectedLugarId = widget.filtrosActuales['lugarId'];
-    _selectedEstado = widget.filtrosActuales['estado'] ?? 'todos';
-    _selectedOrdenReacciones = widget.filtrosActuales['ordenReacciones'] ?? 'recientes';
   }
 
   Future<void> _cargarCatalogos() async {
@@ -46,18 +38,14 @@ class _FilterScreenState extends State<FilterScreen> {
     final catsCache = prefs.getString('categorias_cache');
     final lugsCache = prefs.getString('lugares_cache');
 
-    // 1. CARGA SÚPER RÁPIDA DESDE EL TELÉFONO (Si ya habíamos entrado antes)
     if (catsCache != null && lugsCache != null) {
       final catsLocal = jsonDecode(catsCache);
       final lugsLocal = jsonDecode(lugsCache);
       _procesarYMostrarCatalogos(catsLocal, lugsLocal);
     }
 
-    // 2. ACTUALIZACIÓN SILENCIOSA DE FONDO (O primera vez si no hay caché)
     try {
       final supabase = Supabase.instance.client;
-      
-      // Usamos Future.wait para descargar ambas cosas al mismo tiempo (el doble de rápido)
       final respuestas = await Future.wait([
         supabase.from('cat_categorias').select('id, nombre').order('nombre'),
         supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre')
@@ -66,20 +54,15 @@ class _FilterScreenState extends State<FilterScreen> {
       final catsNube = respuestas[0];
       final lugsNube = respuestas[1];
 
-      // Guardamos en el disco duro para el futuro
       prefs.setString('categorias_cache', jsonEncode(catsNube));
       prefs.setString('lugares_cache', jsonEncode(lugsNube));
 
-      // Actualizamos la pantalla con los datos más frescos
       _procesarYMostrarCatalogos(catsNube, lugsNube);
     } catch (e) {
-      // Si el alumno no tiene internet en este momento, no importa.
-      // Si ya tenía la caché cargada, la pantalla seguirá funcionando perfecto offline.
       if (mounted && _categorias.isEmpty) setState(() => _isLoadingData = false);
     }
   }
 
-  // Separamos la lógica de formato para no repetir código
   void _procesarYMostrarCatalogos(List<dynamic> catsRaw, List<dynamic> lugsRaw) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
@@ -105,7 +88,7 @@ class _FilterScreenState extends State<FilterScreen> {
       setState(() {
         _categorias = List<Map<String, dynamic>>.from(catsRaw);
         _lugares = lugaresFormateados;
-        _isLoadingData = false; // Apagamos la rueda de carga si estaba encendida
+        _isLoadingData = false; 
       });
     }
   }
@@ -119,7 +102,15 @@ class _FilterScreenState extends State<FilterScreen> {
       'estado': _selectedEstado,
       'ordenReacciones': _selectedOrdenReacciones,
     };
-    Navigator.pop(context, filtros);
+    
+    // ¡LA MAGIA OCURRE AQUÍ!
+    // En lugar de regresar atrás, reemplazamos esta pantalla por la de resultados
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ResultadosBusquedaScreen(filtros: filtros),
+      ),
+    );
   }
 
   void _limpiar() {
@@ -135,23 +126,16 @@ class _FilterScreenState extends State<FilterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // --- INICIO DE SEGUROS DE VIDA PARA EVITAR CRASHES ---
-    
-    // 1. Seguro para Categorías
-    // Verificamos si el ID guardado realmente existe en la base de datos actual
     bool categoriaExiste = _selectedCategoriaId == null || 
         _categorias.any((c) => c['id'] == _selectedCategoriaId);
     int? safeCategoriaId = categoriaExiste ? _selectedCategoriaId : null;
 
-    // 2. Seguro para Estados
     const estadosValidos = ['todos', 'pendiente', 'en proceso', 'finalizado'];
     String safeEstado = estadosValidos.contains(_selectedEstado) ? _selectedEstado : 'todos';
 
-    // 3. Seguro para Ordenamiento
     const ordenValidos = ['recientes', 'desc', 'asc'];
     String safeOrden = ordenValidos.contains(_selectedOrdenReacciones) ? _selectedOrdenReacciones : 'recientes';
 
-    // 4. Buscamos el nombre del lugar previo (Este ya lo tenías bien asegurado con el orElse)
     String textLugarInicial = '';
     if (_selectedLugarId != null && _lugares.isNotEmpty) {
       final lugarEncontrado = _lugares.firstWhere(
@@ -160,7 +144,6 @@ class _FilterScreenState extends State<FilterScreen> {
       );
       textLugarInicial = lugarEncontrado['nombreBuscable'];
     }
-    // --- FIN DE SEGUROS DE VIDA ---
 
     return Scaffold(
       appBar: AppBar(
@@ -199,7 +182,6 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 10),
                   
                   DropdownButtonFormField<int>(
-                    // Usamos nuestra variable segura en lugar del _selectedCategoriaId directo
                     initialValue: safeCategoriaId, 
                     decoration: const InputDecoration(labelText: "Categoría", prefixIcon: Icon(Icons.category), border: OutlineInputBorder()),
                     items: [
@@ -256,7 +238,6 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 15),
 
                   DropdownButtonFormField<String>(
-                    // Variable segura
                     initialValue: safeEstado,
                     decoration: const InputDecoration(labelText: "Estado", prefixIcon: Icon(Icons.flag), border: OutlineInputBorder()),
                     items: const [
@@ -274,7 +255,6 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 10),
                   
                   DropdownButtonFormField<String>(
-                    // Variable segura
                     initialValue: safeOrden,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: "Ordenar por Reacciones", prefixIcon: Icon(Icons.favorite), border: OutlineInputBorder()),
