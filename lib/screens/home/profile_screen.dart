@@ -36,63 +36,205 @@ class _ProfileScreenState extends State<ProfileScreen> {
   
   String _correoUsuario = '';
 
+  // ==========================================
+  // VARIABLES PARA LA CARRERA (ESTUDIANTES)
+  // ==========================================
+  bool _esEstudiante = false;
+  String? _numeroControl;
+  int? _carreraIdActual;
+  String _nombreCarreraActual = 'Cargando carrera...';
+  List<Map<String, dynamic>> _carreras = [];
+
   @override
   void initState() {
     super.initState();
-    // 1. Tomamos lo que venga del Widget (por si acaso)
     _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
     final usuarioActual = Supabase.instance.client.auth.currentUser;
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
 
-    // 2. ¡NUEVO! Leemos el disco duro en 0.001 segundos para pintar la pantalla
     _cargarPerfilDesdeCache();
-
-    // 3. Dejamos a Supabase buscando en el fondo por si cambiaste de foto en otra PC
     _cargarPerfilFresco();
   }
 
-  // --- NUEVA LECTURA INSTANTÁNEA ---
+  // --- LECTURA INSTANTÁNEA (CACHÉ) ---
   Future<void> _cargarPerfilDesdeCache() async {
     final prefs = await SharedPreferences.getInstance();
-    final perfilStr = prefs.getString('usuario_perfil');
+    
+    // 1. Cargamos el catálogo de carreras si ya existe
+    final carrsCache = prefs.getString('carreras_cache');
+    if (carrsCache != null) {
+      _carreras = List<Map<String, dynamic>>.from(jsonDecode(carrsCache));
+    }
 
+    // 2. Cargamos los datos del usuario
+    final perfilStr = prefs.getString('usuario_perfil');
     if (perfilStr != null && mounted) {
       final perfilCache = jsonDecode(perfilStr);
       setState(() {
-        // Leemos del caché al instante. Si hay datos ahí, los usamos.
-        if (perfilCache['nombre'] != null) {
-          _nombreActual = perfilCache['nombre'];
-        }
-        if (perfilCache['avatar_url'] != null) {
-          _currentAvatarUrl = perfilCache['avatar_url'];
+        if (perfilCache['nombre'] != null) _nombreActual = perfilCache['nombre'];
+        if (perfilCache['avatar_url'] != null) _currentAvatarUrl = perfilCache['avatar_url'];
+        
+        // Verificamos si en el caché ya sabíamos que era estudiante
+        if (perfilCache['carrera_id'] != null) {
+          _esEstudiante = true;
+          _carreraIdActual = perfilCache['carrera_id'];
+          _nombreCarreraActual = perfilCache['carrera_nombre'] ?? 'Sin carrera';
+          _numeroControl = perfilCache['numero_control'];
         }
       });
     }
   }
 
+  // --- BUSCAR DATOS FRESCOS EN SUPABASE ---
   Future<void> _cargarPerfilFresco() async {
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
       
+      // 1. Descargamos el catálogo de carreras por si agregaron nuevas
+      final carrerasData = await supabase.from('cat_carreras').select('id, nombre').order('nombre');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('carreras_cache', jsonEncode(carrerasData));
+      
+      if (mounted) {
+        setState(() => _carreras = List<Map<String, dynamic>>.from(carrerasData));
+      }
+
+      // 2. Traemos el perfil Y sus datos de estudiante (si los tiene)
       final data = await supabase
           .from('perfiles')
-          .select('nombre, avatar_url')
+          .select('nombre, avatar_url, estudiantes(numero_control, carrera_id)')
           .eq('id', userId)
           .maybeSingle();
 
       if (data != null && mounted) {
         setState(() {
           _nombreActual = data['nombre'] ?? _nombreActual;
-          if (data['avatar_url'] != null) {
-            _currentAvatarUrl = data['avatar_url']; 
+          if (data['avatar_url'] != null) _currentAvatarUrl = data['avatar_url']; 
+
+          // Evaluamos si es estudiante
+          if (data['estudiantes'] != null) {
+            // Dependiendo de cómo armaste la base, puede devolver una Lista o un Mapa
+            var estData = data['estudiantes'];
+            if (estData is List && estData.isNotEmpty) estData = estData[0];
+            
+            if (estData is Map) {
+              _esEstudiante = true;
+              _numeroControl = estData['numero_control'];
+              _carreraIdActual = estData['carrera_id'];
+              
+              // Buscamos el nombre de la carrera en el catálogo que descargamos
+              final carreraObj = _carreras.firstWhere(
+                (c) => c['id'] == _carreraIdActual, 
+                orElse: () => {'nombre': 'Carrera no asignada o borrada'}
+              );
+              _nombreCarreraActual = carreraObj['nombre'];
+            }
           }
         });
+
+        // 3. Guardamos todo en el Caché para la próxima vez
+        final perfilStr = prefs.getString('usuario_perfil');
+        Map<String, dynamic> perfilCache = perfilStr != null ? jsonDecode(perfilStr) : {};
+        
+        perfilCache['nombre'] = _nombreActual;
+        perfilCache['avatar_url'] = _currentAvatarUrl;
+        if (_esEstudiante) {
+          perfilCache['numero_control'] = _numeroControl;
+          perfilCache['carrera_id'] = _carreraIdActual;
+          perfilCache['carrera_nombre'] = _nombreCarreraActual;
+        }
+        await prefs.setString('usuario_perfil', jsonEncode(perfilCache));
       }
     } catch (e) {
       debugPrint("Error recargando perfil: $e");
+    }
+  }
+
+  // ==========================================
+  // FUNCIÓN PARA CAMBIAR CARRERA
+  // ==========================================
+  Future<void> _cambiarCarrera() async {
+    if (_carreras.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cargando catálogo de carreras, espera un segundo...")));
+      return;
+    }
+
+    final nuevaCarreraId = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        int? tempSeleccionada = _carreraIdActual;
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Cambiar Carrera"),
+              content: DropdownButtonFormField<int>(
+                initialValue: tempSeleccionada,
+                isExpanded: true,
+                decoration: const InputDecoration(border: OutlineInputBorder(), prefixIcon: Icon(Icons.school)),
+                items: _carreras.map((c) => DropdownMenuItem<int>(
+                  value: c['id'],
+                  child: Text(c['nombre'], overflow: TextOverflow.ellipsis),
+                )).toList(),
+                onChanged: (val) => setStateDialog(() => tempSeleccionada = val),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF800000), foregroundColor: Colors.white),
+                  onPressed: () => Navigator.pop(context, tempSeleccionada),
+                  child: const Text("Guardar"),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+
+    // Si eligió una nueva y es diferente a la que ya tenía
+    if (nuevaCarreraId != null && nuevaCarreraId != _carreraIdActual) {
+      try {
+        final supabase = Supabase.instance.client;
+        
+        // Actualizamos en la tabla estudiantes usando su número de control como ancla
+        await supabase
+            .from('estudiantes')
+            .update({'carrera_id': nuevaCarreraId})
+            .eq('numero_control', _numeroControl!);
+
+        // Buscamos el nuevo nombre en la lista
+        final carreraObj = _carreras.firstWhere((c) => c['id'] == nuevaCarreraId);
+        final nuevaCarreraNombre = carreraObj['nombre'];
+
+        setState(() {
+          _carreraIdActual = nuevaCarreraId;
+          _nombreCarreraActual = nuevaCarreraNombre;
+        });
+
+        // Actualizamos el Caché
+        final prefs = await SharedPreferences.getInstance();
+        final perfilStr = prefs.getString('usuario_perfil');
+        if (perfilStr != null) {
+          Map<String, dynamic> perfilCache = jsonDecode(perfilStr);
+          perfilCache['carrera_id'] = nuevaCarreraId;
+          perfilCache['carrera_nombre'] = nuevaCarreraNombre;
+          await prefs.setString('usuario_perfil', jsonEncode(perfilCache));
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Carrera actualizada!'), backgroundColor: Colors.green));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al actualizar carrera: $e'), backgroundColor: Colors.red));
+        }
+      }
     }
   }
 
@@ -137,9 +279,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         
         setState(() => _nombreActual = nuevoNombre);
         
-        // =======================================================
-        // ¡NUEVO! CACHEO DE NOMBRE
-        // =======================================================
         final prefs = await SharedPreferences.getInstance();
         final perfilStr = prefs.getString('usuario_perfil');
         if (perfilStr != null) {
@@ -147,10 +286,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           perfilCache['nombre'] = nuevoNombre;
           await prefs.setString('usuario_perfil', jsonEncode(perfilCache));
         } else {
-          // Si no había caché, creamos uno básico
           await prefs.setString('usuario_perfil', jsonEncode({'nombre': nuevoNombre}));
         }
-        // =======================================================
 
         if (widget.onNombreCambiado != null) {
           widget.onNombreCambiado!(nuevoNombre);
@@ -204,9 +341,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isUploading = false;
       });
 
-      // =======================================================
-      // ¡NUEVO! CACHEO DE FOTO DE PERFIL
-      // =======================================================
       final prefs = await SharedPreferences.getInstance();
       final perfilStr = prefs.getString('usuario_perfil');
       if (perfilStr != null) {
@@ -216,7 +350,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         await prefs.setString('usuario_perfil', jsonEncode({'avatar_url': imageUrl}));
       }
-      // =======================================================
 
       if (widget.onAvatarCambiado != null) {
         widget.onAvatarCambiado!(imageUrl);
@@ -258,24 +391,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmar == true) {
-      // 1. Destruimos nuestro caché personalizado de la memoria RAM
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('usuario_perfil'); 
 
-      // 2. Intentamos destruir la sesión en Supabase
       try {
-        // Le decimos a Supabase que intente cerrar sesión.
-        // Si no hay internet, saltará directo al bloque catch.
         await Supabase.instance.client.auth.signOut();
       } catch (e) {
-        // ¡Magia Offline! 
-        // Si el internet falló, forzamos el cierre local de todos modos.
-        // Esto borra el Token JWT de la memoria del celular, así que aunque
-        // el servidor no se haya enterado, el celular ya olvidó al usuario.
         debugPrint("Fallo de red al cerrar sesión. Forzando cierre local. Error: $e");
       }
 
-      // 3. Sin importar si hubo internet o no, sacamos al usuario a la pantalla de Login
       if (context.mounted) {
         Navigator.pushAndRemoveUntil(
           context,
@@ -384,11 +508,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            const SizedBox(height: 40), // Reduje un poco este espacio
+            // ==========================================
+            // ¡NUEVO! MOSTRAR CARRERA SOLO A ESTUDIANTES
+            // ==========================================
+            if (_esEstudiante) ...[
+              const SizedBox(height: 20),
+              TextField(
+                controller: TextEditingController(text: _nombreCarreraActual),
+                readOnly: true, 
+                decoration: InputDecoration(
+                  labelText: "Carrera",
+                  prefixIcon: const Icon(Icons.school, color: Colors.grey),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                    onPressed: _cambiarCarrera, // Llama a nuestro nuevo método
+                    tooltip: "Cambiar carrera",
+                  ),
+                  border: const OutlineInputBorder(),
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 40), 
             
-            // ==========================================
-            // ¡NUEVO! BOTÓN DE MIS REPORTES
-            // ==========================================
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -402,7 +546,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF800000), // Guinda ITL
+                  foregroundColor: const Color(0xFF800000),
                   elevation: 0,
                   side: const BorderSide(color: Color(0xFF800000), width: 1.5),
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -411,7 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            const SizedBox(height: 15), // Separación entre los botones
+            const SizedBox(height: 15), 
             
             SizedBox(
               width: double.infinity,
