@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'dart:convert'; 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
@@ -22,11 +25,31 @@ class HomeScreenState extends State<HomeScreen> {
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
+  // 1. EL CONTROLADOR DE LA LISTA
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     cargarReportes(); 
-    // ¡ADIÓS AL SCROLL CONTROLLER PESADO!
+  }
+
+  // ¡IMPORTANTE! Liberar memoria al cerrar
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // FUNCIÓN PARA ANIMAR HACIA ARRIBA
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0, 
+        duration: const Duration(milliseconds: 600), 
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   Future<void> cargarReportes() async {
@@ -49,13 +72,12 @@ class HomeScreenState extends State<HomeScreen> {
 
     try {
       final supabase = Supabase.instance.client;
-      // Una consulta limpia y directa, sin IFs ni filtros
       final response = await supabase.from('reportes').select('''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
         cat_categorias (id, nombre, icono, color),
         perfiles!inner (nombre, estudiantes(numero_control)),
         reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-      ''').eq('visible', true) // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+      ''').eq('visible', true) 
           .order('id', ascending: false)
           .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
@@ -86,7 +108,7 @@ class HomeScreenState extends State<HomeScreen> {
         cat_categorias (id, nombre, icono, color),
         perfiles!inner (nombre, estudiantes(numero_control)),
         reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-      ''').eq('visible', true) // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+      ''').eq('visible', true) 
           .order('id', ascending: false)
           .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
@@ -117,72 +139,82 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF800000), 
-        foregroundColor: Colors.white,
-      ),
-      body: RefreshIndicator(
-        onRefresh: cargarReportes,
-        color: const Color(0xFF800000),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator()) 
-            : _reportes.isEmpty
-                ? ListView( 
-                    children: const [
-                      SizedBox(height: 150),
-                      Icon(Icons.inbox, size: 80, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
-                    ],
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _reportes.length + 1, 
-                    itemBuilder: (context, index) {
-                      
-                      // ¡EL NUEVO BOTÓN DE CARGAR MÁS EN EL HOME!
-                      if (index == _reportes.length) {
-                        if (!_hayMasDatos) return const SizedBox.shrink();
-                        
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: _cargandoMas
-                            ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                            : Center(
-                                child: OutlinedButton.icon(
-                                  onPressed: _cargarMasReportes,
-                                  icon: const Icon(Icons.add, color: Color(0xFF800000)),
-                                  label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
-                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
-                                ),
-                              ),
-                        );
-                      }
+    final bool isMac = !kIsWeb && Platform.isMacOS;
 
-                      return TarjetaReporteOptimizada(
-                        reporte: _reportes[index],
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+    // ENVOLVEMOS LA PANTALLA EN ATAJOS LOCALES
+    return CallbackShortcuts(
+      bindings: {
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
+        const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            // TÍTULO TÁCTIL PARA REGRESAR ARRIBA
+            title: GestureDetector(
+              onTap: _scrollToTop,
+              child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            backgroundColor: const Color(0xFF800000), 
+            foregroundColor: Colors.white,
+          ),
+          body: RefreshIndicator(
+            onRefresh: cargarReportes,
+            color: const Color(0xFF800000),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator()) 
+                : _reportes.isEmpty
+                    ? ListView( 
+                        children: const [
+                          SizedBox(height: 150),
+                          Icon(Icons.inbox, size: 80, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
+                        ],
+                      )
+                    : ListView.builder(
+                        controller: _scrollController, // <--- CONECTAMOS EL CONTROLADOR
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _reportes.length + 1, 
+                        itemBuilder: (context, index) {
+                          
+                          if (index == _reportes.length) {
+                            if (!_hayMasDatos) return const SizedBox.shrink();
+                            
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: _cargandoMas
+                                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                                : Center(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _cargarMasReportes,
+                                      icon: const Icon(Icons.add, color: Color(0xFF800000)),
+                                      label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
+                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                    ),
+                                  ),
+                            );
+                          }
+
+                          return TarjetaReporteOptimizada(
+                            reporte: _reportes[index],
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+                              );
+                              cargarReportes(); 
+                            },
                           );
-                          cargarReportes(); 
                         },
-                      );
-                    },
-                  ),
+                      ),
+          ),
+        ),
       ),
     );
   }
 }
-
-// =====================================================================
-// [AQUÍ ABAJO DEBES DEJAR TU CÓDIGO INTACTO DE TarjetaReporteOptimizada]
-// =====================================================================
-// class TarjetaReporteOptimizada extends StatelessWidget { ... }
-
 
 // =====================================================================
 // TARJETA EXTRAÍDA E INDEPENDIENTE
@@ -338,11 +370,8 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
                       memCacheWidth: 150, 
-                      // ==========================================
-                      // ¡NUEVO! Matamos las animaciones pesadas
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,
-                      // ==========================================
                       imageBuilder: (context, imageProvider) => Container(
                         width: 50,
                         height: 50,

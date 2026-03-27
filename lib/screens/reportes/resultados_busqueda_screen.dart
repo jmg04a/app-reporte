@@ -1,6 +1,8 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-// ¡Asegúrate de que estas rutas coincidan con tus carpetas!
 import '../home/home_screen.dart'; 
 import 'report_detail_screen.dart';
 
@@ -22,20 +24,37 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
+  // 1. EL CONTROLADOR DE LA LISTA
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _cargarResultados();
   }
 
-// =======================================================================
-  // EL CEREBRO DE LA BÚSQUEDA (El óptimo y dinámico)
-  // =======================================================================
+  // ¡IMPORTANTE! Liberar memoria
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // FUNCIÓN PARA ANIMAR HACIA ARRIBA
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0, 
+        duration: const Duration(milliseconds: 600), 
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   PostgrestFilterBuilder<List<Map<String, dynamic>>> _construirConsultaSupabase() {
     final supabase = Supabase.instance.client;
     final carreraId = widget.filtros['carreraId'];
     
-    // 1. Consulta relajada por defecto (Muestra reportes de profes, admins y alumnos)
     String stringSelect = '''
       id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
       cat_categorias (id, nombre, icono, color),
@@ -43,7 +62,6 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
       reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
     ''';
 
-    // 2. Consulta estricta SOLO si el usuario seleccionó una carrera en el filtro
     if (carreraId != null) {
       stringSelect = '''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
@@ -55,17 +73,14 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
     var query = supabase.from('reportes').select(stringSelect);
 
-    // REGLA DE ORO: Solo buscar entre los reportes visibles
-    query = query.eq('visible', true); // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+    query = query.eq('visible', true); 
 
-    // Filtros
     final titulo = widget.filtros['titulo']?.toString().trim() ?? '';
     if (titulo.isNotEmpty) query = query.ilike('titulo', '%$titulo%');
 
     final categoriaId = widget.filtros['categoriaId'];
     if (categoriaId != null) query = query.eq('categoria_id', categoriaId);
 
-    // Aplicar el filtro de la carrera si existe
     if (carreraId != null) {
       query = query.filter('perfiles.estudiantes.carrera_id', 'eq', carreraId);
     }
@@ -153,62 +168,80 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Resultados de Búsqueda"),
-        backgroundColor: const Color(0xFF800000),
-        foregroundColor: Colors.white,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-          : _reportes.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.search_off, size: 80, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text("No se encontraron reportes con estos filtros.", style: TextStyle(color: Colors.grey, fontSize: 16)),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _reportes.length + 1, 
-                  itemBuilder: (context, index) {
-                    
-                    // BOTÓN DE CARGAR MÁS
-                    if (index == _reportes.length) {
-                      if (!_hayMasDatos) return const SizedBox.shrink();
-                      
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        child: _cargandoMas
-                          ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                          : Center(
-                              child: OutlinedButton.icon(
-                                onPressed: _cargarMasResultados,
-                                icon: const Icon(Icons.add, color: Color(0xFF800000)), // Ícono minimalista actualizado
-                                label: const Text("Cargar más resultados", style: TextStyle(color: Color(0xFF800000))),
-                                style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
-                              ),
-                            ),
-                      );
-                    }
+    final bool isMac = !kIsWeb && Platform.isMacOS;
 
-                    // TARJETAS RECICLADAS
-                    return TarjetaReporteOptimizada(
-                      reporte: _reportes[index],
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+    // ENVOLVEMOS LA PANTALLA EN ATAJOS LOCALES
+    return CallbackShortcuts(
+      bindings: {
+        // Atajo 1: Ctrl + Flecha Arriba (Win/Linux) o Cmd + Flecha Arriba (Mac)
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
+        
+        // Atajo 2: Tecla "Inicio" (Home) nativa de teclados de PC
+        const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            // TÍTULO TÁCTIL PARA REGRESAR ARRIBA
+            title: GestureDetector(
+              onTap: _scrollToTop,
+              child: const Text("Resultados de Búsqueda"),
+            ),
+            backgroundColor: const Color(0xFF800000),
+            foregroundColor: Colors.white,
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+              : _reportes.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, size: 80, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text("No se encontraron reportes con estos filtros.", style: TextStyle(color: Colors.grey, fontSize: 16)),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController, // <--- CONECTAMOS EL CONTROLADOR
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _reportes.length + 1, 
+                      itemBuilder: (context, index) {
+                        
+                        if (index == _reportes.length) {
+                          if (!_hayMasDatos) return const SizedBox.shrink();
+                          
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: _cargandoMas
+                              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                              : Center(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _cargarMasResultados,
+                                    icon: const Icon(Icons.add, color: Color(0xFF800000)), 
+                                    label: const Text("Cargar más resultados", style: TextStyle(color: Color(0xFF800000))),
+                                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                  ),
+                                ),
+                          );
+                        }
+
+                        return TarjetaReporteOptimizada(
+                          reporte: _reportes[index],
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+                            );
+                            _cargarResultados(); 
+                          },
                         );
-                        _cargarResultados(); 
                       },
-                    );
-                  },
-                ),
+                    ),
+        ),
+      ),
     );
   }
 }

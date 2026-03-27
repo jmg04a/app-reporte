@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../reportes/filter_screen.dart'; // Agrega esto junto a tus otros imports
+
+// --- IMPORTANTE: Conecta este archivo con tu main.dart ---
+import '../../main.dart'; // <--- AJUSTA ESTA RUTA HACIA TU main.dart SI ES NECESARIO
+
+import '../reportes/filter_screen.dart'; 
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import '../reportes/create_report_screen.dart';
@@ -17,10 +21,8 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _indiceActual = 0;
-
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
 
-  // Variables de estado interno para conservar la sesión en toda la app
   String _nombreUsuario = 'Cargando...';
   String _rolUsuario = '';
   String? _avatarUrl;
@@ -29,6 +31,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     _cargarDatosUsuario();
+
+    // ESCUCHAMOS EL TECLADO GLOBAL
+    globalTabIndex.addListener(() {
+      // Solo actualizamos si el valor es Home (0) o Perfil (3)
+      if (mounted && (globalTabIndex.value == 0 || globalTabIndex.value == 3)) {
+        setState(() {
+          _indiceActual = globalTabIndex.value;
+        });
+      }
+    });
   }
 
   Future<void> _cargarDatosUsuario() async {
@@ -88,16 +100,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  // --- FUNCIÓN QUE CONSTRUYE LA PANTALLA CORRECTA ---
   Widget _construirPantalla() {
     if (_indiceActual == 3) {
       return ProfileScreen(
         nombre: _nombreUsuario,
         rol: _rolUsuario,
         avatarUrl: _avatarUrl,
-        
-        // ¡LA MAGIA OCURRE AQUÍ!
-        // Escuchamos los callbacks del Perfil y actualizamos la barra principal
         onNombreCambiado: (nuevoNombre) {
           setState(() => _nombreUsuario = nuevoNombre);
         },
@@ -107,7 +115,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       );
     }
     
-    // Si no es el perfil, mostramos el Home
     return HomeScreen(key: _homeKey);
   }
 
@@ -124,26 +131,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         bottomNavigationBar: NavigationBar(
           selectedIndex: _indiceActual,
           onDestinationSelected: (int index) async {
-            // ==========================================
-            // ¡NUEVA LÓGICA PARA EL BOTÓN DE BÚSQUEDA!
-            // ==========================================
             if (index == 1) {
+              // 1. BÚSQUEDA: Abre encima de la barra
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const FilterScreen()),
               );
-            } 
-            // ==========================================
-            else if (index == 2) {
+            } else if (index == 2) {
+              // 2. CREAR REPORTE: Abre encima de la barra
               await Navigator.push(
                 context,
-                MaterialPageRoute(
-                    builder: (context) => const CreateReportScreen()),
+                MaterialPageRoute(builder: (context) => const CreateReportScreen()),
               );
               _homeKey.currentState?.cargarReportes();
+              
+              // Regresamos al Home y sincronizamos el control global
               setState(() => _indiceActual = 0);
+              globalTabIndex.value = 0; 
             } else {
+              // 0 y 3 (HOME Y PERFIL): Cambian de pestaña en la misma barra
               setState(() => _indiceActual = index);
+              globalTabIndex.value = index; 
             }
           },
           backgroundColor: Colors.white,
