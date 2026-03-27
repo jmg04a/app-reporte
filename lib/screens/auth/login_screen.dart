@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../home/main_navigation_screen.dart';
 import '../auth/register_screen.dart';
-import '../auth/forgot_password_screen.dart';
+import '../auth/recovery_screen.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -118,9 +118,8 @@ Future<void> _iniciarSesion() async {
                   labelText: "Correo Institucional",
                   hintText: "ej. alu.20310092", // Ejemplo corto
                   
-                  // ESTA ES LA PARTE VISUAL CLAVE:
-                  suffixText: _dominio, 
-                  suffixStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                  helperText: "Se agregará automáticamente @correo.itlalaguna.edu.mx",
+                  helperStyle: TextStyle(color: Colors.black54),
                   
                   prefixIcon: const Icon(Icons.person_outline),
                   border: const OutlineInputBorder(),
@@ -149,9 +148,14 @@ Future<void> _iniciarSesion() async {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
+                    // Extraemos el texto que el usuario haya escrito
+                    final correoEscrito = _usuarioController.text.trim();
+                    
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => RecoveryScreen(initialEmail: correoEscrito),
+                      ),
                     );
                   },
                   child: const Text(

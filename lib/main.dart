@@ -18,7 +18,7 @@ Future<void> main() async {
     await windowManager.ensureInitialized();
 
     WindowOptions windowOptions = const WindowOptions(
-      size: Size(1000, 800),         // Tamaño por DEFAULT al abrir
+      size: Size(1080, 800),         // Tamaño por DEFAULT al abrir
       minimumSize: Size(600, 700),   // Tamaño MÍNIMO permitido
       center: true,                  // Centrado en el monitor
       backgroundColor: Colors.transparent,

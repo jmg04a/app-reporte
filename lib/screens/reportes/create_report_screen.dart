@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'dart:convert'; // Para convertir el borrador a texto
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Para guardar el borrador
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CreateReportScreen extends StatefulWidget {
   const CreateReportScreen({super.key});
@@ -17,8 +17,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
 
-  bool _isSubmitting = false; // Rueda de carga del botón enviar
-  bool _isLoadingData = true; // Rueda de carga al abrir la pantalla
+  bool _isSubmitting = false; 
+  bool _isLoadingData = true; 
 
   List<Map<String, dynamic>> _categorias = [];
   List<Map<String, dynamic>> _todosLosLugares = []; 
@@ -26,10 +26,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   int? _selectedCategoriaId;
   int? _selectedLugarId; 
 
+  String? _errorLugar;
+  String _lugarTextoActual = '';
+
   XFile? _imagenSeleccionada;
   final ImagePicker _picker = ImagePicker();
 
-  // Esta llave nos servirá para reiniciar el buscador de lugares cuando limpiemos el borrador
   Key _autocompleteKey = UniqueKey();
 
   @override
@@ -47,19 +49,17 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     super.dispose();
   }
 
-Future<void> _cargarDatosIniciales() async {
+  Future<void> _cargarDatosIniciales() async {
     final prefs = await SharedPreferences.getInstance();
     final catsCache = prefs.getString('categorias_cache');
     final lugsCache = prefs.getString('lugares_cache');
 
-    // 1. CARGA SÚPER RÁPIDA DESDE EL DISCO DURO
     if (catsCache != null && lugsCache != null) {
       final catsLocal = jsonDecode(catsCache);
       final lugsLocal = jsonDecode(lugsCache);
       _procesarYMostrarCatalogos(catsLocal, lugsLocal);
     }
 
-    // 2. ACTUALIZACIÓN SILENCIOSA DE FONDO
     try {
       final supabase = Supabase.instance.client;
       
@@ -71,42 +71,44 @@ Future<void> _cargarDatosIniciales() async {
       final categoriasData = respuestas[0];
       final lugaresData = respuestas[1];
 
-      // Guardamos la versión más fresca para el futuro (compartido con los filtros)
       prefs.setString('categorias_cache', jsonEncode(categoriasData));
       prefs.setString('lugares_cache', jsonEncode(lugaresData));
 
       _procesarYMostrarCatalogos(categoriasData, lugaresData);
 
     } catch (e) {
-      // Si falla el internet, no mostramos error si ya teníamos el caché
       if (_categorias.isEmpty) {
         _mostrarMensaje("Error cargando catálogos: $e", esError: true);
       }
     } finally {
-      // 3. Cargamos el borrador (textos que el usuario estaba escribiendo)
       await _cargarBorrador();
       if (mounted) setState(() => _isLoadingData = false);
     }
   }
 
-  // Separamos la lógica de formato para mantener el código limpio
   void _procesarYMostrarCatalogos(List<dynamic> categoriasData, List<dynamic> lugaresData) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
     for (var lugar in lugaresData) {
-      String nombreMostrar = lugar['nombre'];
-      if (lugar['tipo'] == 'aula' && lugar['parent_id'] != null) {
+      String nombre = lugar['nombre'];
+      String padreNombre = '';
+
+      if (lugar['parent_id'] != null) {
         final padre = lugaresData.firstWhere(
           (element) => element['id'] == lugar['parent_id'], 
           orElse: () => {'nombre': ''}
         );
-        if (padre['nombre'] != '') {
-          nombreMostrar = '$nombreMostrar (${padre['nombre']})';
-        }
+        padreNombre = padre['nombre'];
       }
+
+      String nombreBuscable = padreNombre.isNotEmpty ? '$nombre ($padreNombre)' : nombre;
+
       lugaresFormateados.add({
         'id': lugar['id'],
-        'nombreBuscable': nombreMostrar,
+        'nombre': nombre,
+        'padre_nombre': padreNombre,
+        'tipo': lugar['tipo'], 
+        'nombreBuscable': nombreBuscable,
       });
     }
 
@@ -117,8 +119,6 @@ Future<void> _cargarDatosIniciales() async {
       });
     }
   }
-
-  // --- LÓGICA DE BORRADOR (AUTOGUARDADO) ---
 
   Future<void> _cargarBorrador() async {
     final prefs = await SharedPreferences.getInstance();
@@ -134,7 +134,6 @@ Future<void> _cargarDatosIniciales() async {
       });
     }
 
-    // Le decimos a los campos de texto que guarden automáticamente cada vez que el usuario escriba una letra
     _tituloController.addListener(_guardarBorrador);
     _descripcionController.addListener(_guardarBorrador);
   }
@@ -151,11 +150,16 @@ Future<void> _cargarDatosIniciales() async {
   }
 
   Future<void> _limpiarBorrador() async {
-    // Confirmación antes de borrar
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Descartar reporte"),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_sweep, color: Colors.red),
+            SizedBox(width: 10),
+            Text("Descartar reporte"),
+          ],
+        ),
         content: const Text("¿Estás seguro de que deseas borrar todo lo que has escrito?"),
         actions: [
           TextButton(
@@ -173,21 +177,20 @@ Future<void> _cargarDatosIniciales() async {
 
     if (confirmar == true) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('reporte_borrador'); // Borramos de la memoria
+      await prefs.remove('reporte_borrador');
 
       setState(() {
-        // Limpiamos la pantalla
         _tituloController.clear();
         _descripcionController.clear();
         _selectedCategoriaId = null;
         _selectedLugarId = null;
         _imagenSeleccionada = null;
-        _autocompleteKey = UniqueKey(); // Reiniciamos el buscador de texto forzosamente
+        _errorLugar = null;
+        _lugarTextoActual = '';
+        _autocompleteKey = UniqueKey(); 
       });
     }
   }
-
-  // ----------------------------------------
 
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
@@ -272,8 +275,20 @@ Future<void> _cargarDatosIniciales() async {
       _mostrarMensaje("Selecciona una categoría.", esError: true);
       return;
     }
+
+    if (_selectedLugarId == null && _lugarTextoActual.trim().isNotEmpty) {
+      final matchExacto = _todosLosLugares.where((l) =>
+          l['nombreBuscable'].toString().toLowerCase() == _lugarTextoActual.trim().toLowerCase()).toList();
+      
+      if (matchExacto.isNotEmpty) {
+        _selectedLugarId = matchExacto.first['id']; 
+        setState(() => _errorLugar = null);
+      }
+    }
+
     if (_selectedLugarId == null) {
-      _mostrarMensaje("Por favor busca y selecciona una ubicación.", esError: true);
+      setState(() => _errorLugar = "Por favor seleccionar un edificio o aula válida");
+      _mostrarMensaje("Por favor seleccionar un edificio o aula válida.", esError: true);
       return;
     }
 
@@ -283,7 +298,6 @@ Future<void> _cargarDatosIniciales() async {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
 
-      // --- RADAR DE DUPLICADOS ---
       final duplicados = await supabase
           .from('reportes')
           .select('id, titulo, estado, reporte_ubicaciones!inner(lugar_id)')
@@ -327,7 +341,6 @@ Future<void> _cargarDatosIniciales() async {
         setState(() => _isSubmitting = true);
       }
 
-      // Subir imagen (si hay)
       String? evidenciaUrlFinal;
       if (_imagenSeleccionada != null) {
         final extension = _imagenSeleccionada!.name.split('.').last;
@@ -343,7 +356,6 @@ Future<void> _cargarDatosIniciales() async {
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
 
-      // Guardar el reporte principal
       final reporteInsertado = await supabase.from('reportes').insert({
         'titulo': _tituloController.text.trim(),
         'descripcion': _descripcionController.text.trim(),
@@ -355,13 +367,11 @@ Future<void> _cargarDatosIniciales() async {
 
       final reporteId = reporteInsertado['id'];
 
-      // Guardar la ubicación
       await supabase.from('reporte_ubicaciones').insert({
         'reporte_id': reporteId,
         'lugar_id': _selectedLugarId,
       });
 
-      // ¡NUEVO! Como el reporte ya se envió, borramos el borrador guardado en el teléfono
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('reporte_borrador');
 
@@ -378,7 +388,6 @@ Future<void> _cargarDatosIniciales() async {
 
   @override
   Widget build(BuildContext context) {
-    // Si todavía estamos extrayendo los datos y el borrador de la memoria, mostramos una carga inicial
     if (_isLoadingData) {
       return Scaffold(
         appBar: AppBar(
@@ -389,7 +398,6 @@ Future<void> _cargarDatosIniciales() async {
       );
     }
 
-    // Preparamos el texto del buscador de lugares para que coincida con el borrador recuperado
     String textLugarInicial = '';
     if (_selectedLugarId != null && _todosLosLugares.isNotEmpty) {
       final lugarEncontrado = _todosLosLugares.firstWhere(
@@ -398,20 +406,15 @@ Future<void> _cargarDatosIniciales() async {
       );
       textLugarInicial = lugarEncontrado['nombreBuscable'];
     }
+    
+    _lugarTextoActual = textLugarInicial;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Nuevo Reporte"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
-        actions: [
-          // ¡NUEVO! Botón para descartar/limpiar el borrador
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: "Limpiar reporte",
-            onPressed: _limpiarBorrador,
-          ),
-        ],
+        // ¡Se eliminó el botón de la esquina superior derecha!
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -445,7 +448,7 @@ Future<void> _cargarDatosIniciales() async {
               }).toList(),
               onChanged: (val) {
                 setState(() => _selectedCategoriaId = val);
-                _guardarBorrador(); // Autoguardado al cambiar opción
+                _guardarBorrador(); 
               },
             ),
             const SizedBox(height: 20),
@@ -455,42 +458,91 @@ Future<void> _cargarDatosIniciales() async {
             const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
             
-            // BUSCADOR INTELIGENTE
             Autocomplete<Map<String, dynamic>>(
-              key: _autocompleteKey, // Esto permite reiniciarlo desde el botón limpiar
-              initialValue: TextEditingValue(text: textLugarInicial), // Carga el borrador
+              key: _autocompleteKey, 
+              initialValue: TextEditingValue(text: textLugarInicial), 
               optionsBuilder: (TextEditingValue textEditingValue) {
                 if (textEditingValue.text.isEmpty) {
                   return const Iterable<Map<String, dynamic>>.empty();
                 }
+                final query = textEditingValue.text.toLowerCase();
                 return _todosLosLugares.where((lugar) =>
-                    lugar['nombreBuscable']
-                        .toString()
-                        .toLowerCase()
-                        .contains(textEditingValue.text.toLowerCase()));
+                    lugar['nombreBuscable'].toString().toLowerCase().contains(query));
               },
               displayStringForOption: (option) => option['nombreBuscable'],
               onSelected: (option) {
-                setState(() => _selectedLugarId = option['id']);
-                _guardarBorrador(); // Autoguardado al seleccionar ubicación
+                setState(() {
+                  _selectedLugarId = option['id'];
+                  _errorLugar = null; 
+                });
+                _guardarBorrador(); 
                 FocusScope.of(context).unfocus(); 
               },
               fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                 return TextField(
                   controller: controller,
                   focusNode: focusNode,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: "Buscar edificio o aula...",
                     hintText: "Ej. 19, Sistemas, Aula 3",
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    errorText: _errorLugar, 
                   ),
                   onChanged: (val) {
-                    if (val.isEmpty) {
-                      setState(() => _selectedLugarId = null);
-                      _guardarBorrador();
+                    _lugarTextoActual = val; 
+                    
+                    if (_selectedLugarId != null) {
+                      setState(() => _selectedLugarId = null); 
                     }
+                    if (_errorLugar != null) {
+                      setState(() => _errorLugar = null); 
+                    }
+                    _guardarBorrador();
                   },
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                final anchosCaja = MediaQuery.of(context).size.width - 48; 
+                
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(8),
+                    clipBehavior: Clip.antiAlias,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: 250, maxWidth: anchosCaja),
+                      child: ListView.separated(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1),
+                        itemBuilder: (BuildContext context, int index) {
+                          final option = options.elementAt(index);
+                          final esEdificio = option['padre_nombre'] == '';
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                              child: Icon(
+                                esEdificio ? Icons.domain : Icons.meeting_room,
+                                color: const Color(0xFF800000),
+                              ),
+                            ),
+                            title: Text(
+                              option['nombre'], 
+                              style: const TextStyle(fontWeight: FontWeight.bold)
+                            ),
+                            subtitle: esEdificio
+                                ? const Text("Zona / Edificio Principal", style: TextStyle(color: Colors.grey, fontSize: 12))
+                                : Text("Pertenece a: ${option['padre_nombre']}", style: const TextStyle(color: Color(0xFF800000), fontSize: 12)),
+                            onTap: () => onSelected(option),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
@@ -548,18 +600,39 @@ Future<void> _cargarDatosIniciales() async {
               ),
             const SizedBox(height: 30),
 
+            // ¡NUEVA FILA DE BOTONES SIMÉTRICOS!
             if (_isSubmitting)
-              const Center(child: CircularProgressIndicator())
+              const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
             else
-              ElevatedButton.icon(
-                onPressed: _enviarReporte,
-                icon: const Icon(Icons.send),
-                label: const Text("ENVIAR REPORTE", style: TextStyle(fontSize: 16)),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF800000),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF800000),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.send),
+                      label: const Text("ENVIAR REPORTE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      onPressed: _enviarReporte,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[50],
+                      foregroundColor: Colors.red,
+                      elevation: 0,
+                      side: BorderSide(color: Colors.red[200]!),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _limpiarBorrador,
+                    child: const Icon(Icons.delete_outline), // Bote de basura estilo filter_screen
+                  ),
+                ],
               ),
           ],
         ),

@@ -28,22 +28,44 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
     _cargarResultados();
   }
 
-  // Se trajo el "Cerebro" desde el HomeScreen hacia acá
+// =======================================================================
+  // EL CEREBRO DE LA BÚSQUEDA (El óptimo y dinámico)
+  // =======================================================================
   PostgrestFilterBuilder<List<Map<String, dynamic>>> _construirConsultaSupabase() {
     final supabase = Supabase.instance.client;
+    final carreraId = widget.filtros['carreraId'];
     
-    var query = supabase.from('reportes').select('''
+    // 1. Consulta relajada por defecto (Muestra reportes de profes, admins y alumnos)
+    String stringSelect = '''
       id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
       cat_categorias (id, nombre, icono, color),
-      perfiles!inner (nombre, estudiantes(numero_control)),
+      perfiles!inner (nombre, estudiantes(numero_control, carrera_id)),
       reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-    ''');
+    ''';
 
+    // 2. Consulta estricta SOLO si el usuario seleccionó una carrera en el filtro
+    if (carreraId != null) {
+      stringSelect = '''
+        id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
+        cat_categorias (id, nombre, icono, color),
+        perfiles!inner (nombre, estudiantes!inner(numero_control, carrera_id)),
+        reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
+      ''';
+    }
+
+    var query = supabase.from('reportes').select(stringSelect);
+
+    // Filtros
     final titulo = widget.filtros['titulo']?.toString().trim() ?? '';
     if (titulo.isNotEmpty) query = query.ilike('titulo', '%$titulo%');
 
     final categoriaId = widget.filtros['categoriaId'];
     if (categoriaId != null) query = query.eq('categoria_id', categoriaId);
+
+    // Aplicar el filtro de la carrera si existe
+    if (carreraId != null) {
+      query = query.filter('perfiles.estudiantes.carrera_id', 'eq', carreraId);
+    }
 
     final estadoFiltro = widget.filtros['estado'] ?? 'todos';
     if (estadoFiltro != 'todos') query = query.eq('estado', estadoFiltro);
@@ -56,7 +78,7 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
     return query;
   }
-
+  
   Future<void> _cargarResultados() async {
     setState(() => _isLoading = true);
     _rangoInicio = 0;
@@ -163,7 +185,7 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
                           : Center(
                               child: OutlinedButton.icon(
                                 onPressed: _cargarMasResultados,
-                                icon: const Icon(Icons.add_circle_outline, color: Color(0xFF800000)),
+                                icon: const Icon(Icons.add, color: Color(0xFF800000)), // Ícono minimalista actualizado
                                 label: const Text("Cargar más resultados", style: TextStyle(color: Color(0xFF800000))),
                                 style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
                               ),
