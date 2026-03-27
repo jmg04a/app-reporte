@@ -35,6 +35,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
         reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
       ''')
       .eq('usuario_id', miUserId) 
+      .eq('visible', true) // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
       .order('id', ascending: false); 
 
       if (mounted) {

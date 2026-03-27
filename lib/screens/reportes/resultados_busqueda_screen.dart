@@ -55,6 +55,9 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
     var query = supabase.from('reportes').select(stringSelect);
 
+    // REGLA DE ORO: Solo buscar entre los reportes visibles
+    query = query.eq('visible', true); // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+
     // Filtros
     final titulo = widget.filtros['titulo']?.toString().trim() ?? '';
     if (titulo.isNotEmpty) query = query.ilike('titulo', '%$titulo%');
@@ -78,7 +81,7 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
     return query;
   }
-  
+
   Future<void> _cargarResultados() async {
     setState(() => _isLoading = true);
     _rangoInicio = 0;

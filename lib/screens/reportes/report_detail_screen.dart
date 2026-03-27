@@ -17,9 +17,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   
   // --- VARIABLES DE PERMISOS Y ESTADO ---
   bool _isAdmin = false;
+  bool _isCreator = false; // ¡NUEVO! Para saber si el usuario creó este reporte
   String _estadoActual = 'pendiente';
 
-  // --- NUEVAS VARIABLES PARA REACCIONES ---
+  // --- VARIABLES PARA REACCIONES ---
   bool _yaReacciono = false;
   int _contadorReacciones = 0;
 
@@ -68,7 +69,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         cat_lugares (nombre)
       ''').eq('reporte_id', widget.reporteId).maybeSingle();
 
-      // 4. NUEVO: Verificamos si el usuario actual ya reaccionó a este reporte
+      // 4. Verificamos si el usuario actual ya reaccionó a este reporte
       final reaccionData = await supabase
           .from('reacciones')
           .select('id')
@@ -82,9 +83,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           _estadoActual = reporteData['estado'] ?? 'pendiente';
           _ubicacionExacta = ubicacionData?['cat_lugares']?['nombre'] ?? 'Ubicación no especificada';
           
-          // Guardamos el conteo inicial y si ya había reaccionado
+          // Guardamos el conteo, la reacción y si ES EL CREADOR
           _contadorReacciones = reporteData['reaccion_count'] ?? 0;
-          _yaReacciono = reaccionData != null; // Si encuentra un ID, significa que ya reaccionó
+          _yaReacciono = reaccionData != null; 
+          _isCreator = reporteData['usuario_id'] == currentUserId; // ¡Validación de creador!
           
           _isLoading = false;
         });
@@ -97,46 +99,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // --- NUEVA FUNCIÓN PARA EL BOTÓN DE "ME GUSTA" ---
-  Future<void> _toggleReaccion() async {
-    final supabase = Supabase.instance.client;
-    final userId = supabase.auth.currentUser!.id;
-
-    // Cambiamos la interfaz inmediatamente para que se sienta instantáneo (Optimistic UI)
-    setState(() {
-      _yaReacciono = !_yaReacciono;
-      _contadorReacciones += _yaReacciono ? 1 : -1;
-    });
-
-    try {
-      if (_yaReacciono) {
-        // Le dio a "Tengo el problema" -> Insertamos
-        await supabase.from('reacciones').insert({
-          'reporte_id': widget.reporteId,
-          'usuario_id': userId,
-        });
-      } else {
-        // Le quitó el "Tengo el problema" -> Borramos
-        await supabase
-            .from('reacciones')
-            .delete()
-            .match({'reporte_id': widget.reporteId, 'usuario_id': userId});
-      }
-    } catch (e) {
-      // Si falla por falta de internet o error, revertimos el botón a como estaba
-      if (mounted) {
-        setState(() {
-          _yaReacciono = !_yaReacciono;
-          _contadorReacciones += _yaReacciono ? 1 : -1;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al procesar tu reacción'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  // --- FUNCIÓN DEL ADMINISTRADOR PARA CAMBIAR ESTADO ---
+  // --- FUNCIÓN DEL ADMINISTRADOR PARA CAMBIAR ESTADO ---
   Future<void> _actualizarEstado(String nuevoEstado) async {
     if (nuevoEstado == _estadoActual) return;
 
@@ -164,6 +127,93 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al actualizar estado: $e'), backgroundColor: Colors.red),
         );
+      }
+    }
+  }
+
+  // --- FUNCIÓN PARA EL BOTÓN DE "ME GUSTA" ---
+  Future<void> _toggleReaccion() async {
+    final supabase = Supabase.instance.client;
+    final userId = supabase.auth.currentUser!.id;
+
+    setState(() {
+      _yaReacciono = !_yaReacciono;
+      _contadorReacciones += _yaReacciono ? 1 : -1;
+    });
+
+    try {
+      if (_yaReacciono) {
+        await supabase.from('reacciones').insert({
+          'reporte_id': widget.reporteId,
+          'usuario_id': userId,
+        });
+      } else {
+        await supabase
+            .from('reacciones')
+            .delete()
+            .match({'reporte_id': widget.reporteId, 'usuario_id': userId});
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _yaReacciono = !_yaReacciono;
+          _contadorReacciones += _yaReacciono ? 1 : -1;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al procesar tu reacción'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // --- ¡NUEVO! FUNCIÓN PARA BORRADO LÓGICO ---
+  Future<void> _borrarReporte() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red),
+            SizedBox(width: 10),
+            Text("Eliminar Reporte"),
+          ],
+        ),
+        content: const Text("¿Estás seguro de que deseas eliminar este reporte? Se ocultará del sistema y ya no será visible."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Sí, eliminar"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      try {
+        // Hacemos el "Soft Delete" apagando la visibilidad
+        await Supabase.instance.client
+            .from('reportes')
+            .update({'visible': false})
+            .eq('id', widget.reporteId);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Reporte eliminado exitosamente'), backgroundColor: Colors.green),
+          );
+          // Sacamos al usuario de esta pantalla porque el reporte "ya no existe"
+          Navigator.pop(context); 
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: Colors.red),
+          );
+        }
       }
     }
   }
@@ -197,7 +247,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final categoria = reporte['cat_categorias'];
     final imageUrl = reporte['evidencia_url'];
     
-    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR
+    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR
     final perfilCreador = reporte['perfiles']; 
     final nombreCreador = perfilCreador?['nombre'] ?? 'Usuario Desconocido';
     final avatarUrl = perfilCreador?['avatar_url'];
@@ -306,7 +356,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 4. TARJETA DE QUIÉN LO REPORTÓ
+                  // 4. TARJETA DE QUIÉN LO REPORTÓ
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -339,8 +389,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 5. UBICACIÓN Y DESCRIPCIÓN
-                  const Text("Ubicación", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  // 5. UBICACIÓN Y DESCRIPCIÓN
+                  const Text("Ubicación", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 5),
                   Row(
                     children: [
@@ -351,10 +401,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const Padding(padding: EdgeInsets.symmetric(vertical: 15), child: Divider()),
 
-                  const Text("Descripción del problema", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const Text("Descripción del problema", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Text(
-                    reporte['descripcion'] ?? 'Sin descripción adicional.',
+                    reporte['descripcion'] ?? 'Sin descripción adicional.',
                     style: const TextStyle(fontSize: 16),
                   ),
                   
@@ -362,11 +412,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   const Divider(),
                   const SizedBox(height: 10),
 
-                  // 6. ¡NUEVO! SECCIÓN DE REACCIONES EN LA PARTE INFERIOR
+                  // 6. SECCIÓN DE REACCIONES
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Lado Izquierdo: Contador visual
                       Row(
                         children: [
                           Icon(Icons.group, color: Colors.grey[600]),
@@ -377,8 +426,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           ),
                         ],
                       ),
-                      
-                      // Lado Derecho: El botón interactivo
                       ElevatedButton.icon(
                         onPressed: _toggleReaccion,
                         icon: Icon(
@@ -403,6 +450,30 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 30),
+
+                  // ==========================================
+                  // 7. ¡NUEVO! BOTÓN DE ELIMINAR REPORTE
+                  // Solo visible para Administradores o el Creador
+                  // ==========================================
+                  if (_isAdmin || _isCreator) ...[
+                    const Divider(),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _borrarReporte,
+                        icon: const Icon(Icons.delete_forever),
+                        label: const Text("ELIMINAR REPORTE", style: TextStyle(fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red, width: 1.5),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 40),
                 ],

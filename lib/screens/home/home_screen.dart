@@ -55,7 +55,8 @@ class HomeScreenState extends State<HomeScreen> {
         cat_categorias (id, nombre, icono, color),
         perfiles!inner (nombre, estudiantes(numero_control)),
         reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-      ''').order('id', ascending: false)
+      ''').eq('visible', true) // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+          .order('id', ascending: false)
           .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
       if (mounted) {
@@ -85,7 +86,8 @@ class HomeScreenState extends State<HomeScreen> {
         cat_categorias (id, nombre, icono, color),
         perfiles!inner (nombre, estudiantes(numero_control)),
         reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
-      ''').order('id', ascending: false)
+      ''').eq('visible', true) // <--- ¡AGREGA ESTA LÍNEA AQUÍ!
+          .order('id', ascending: false)
           .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
 
       if (mounted) {
