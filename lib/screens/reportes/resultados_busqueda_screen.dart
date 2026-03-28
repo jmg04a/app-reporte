@@ -24,7 +24,6 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
-  // 1. EL CONTROLADOR DE LA LISTA
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -33,14 +32,12 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
     _cargarResultados();
   }
 
-  // ¡IMPORTANTE! Liberar memoria
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
 
-  // FUNCIÓN PARA ANIMAR HACIA ARRIBA
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -170,20 +167,15 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
   Widget build(BuildContext context) {
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
-    // ENVOLVEMOS LA PANTALLA EN ATAJOS LOCALES
     return CallbackShortcuts(
       bindings: {
-        // Atajo 1: Ctrl + Flecha Arriba (Win/Linux) o Cmd + Flecha Arriba (Mac)
         SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
-        
-        // Atajo 2: Tecla "Inicio" (Home) nativa de teclados de PC
         const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
       },
       child: Focus(
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            // TÍTULO TÁCTIL PARA REGRESAR ARRIBA
             title: GestureDetector(
               onTap: _scrollToTop,
               child: const Text("Resultados de Búsqueda"),
@@ -205,7 +197,8 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
                       ),
                     )
                   : ListView.builder(
-                      controller: _scrollController, // <--- CONECTAMOS EL CONTROLADOR
+                      controller: _scrollController, 
+                      cacheExtent: 2500, // <--- ¡SIN PARPADEOS!
                       padding: const EdgeInsets.all(12),
                       itemCount: _reportes.length + 1, 
                       itemBuilder: (context, index) {

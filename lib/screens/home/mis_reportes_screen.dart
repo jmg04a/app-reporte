@@ -17,7 +17,12 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
   List<Map<String, dynamic>> _misReportes = [];
   bool _isLoading = true;
 
-  // 1. EL CONTROLADOR DE LA LISTA
+  // Lógica de Paginación
+  int _rangoInicio = 0;
+  final int _cantidadPorPagina = 15; 
+  bool _hayMasDatos = true;
+  bool _cargandoMas = false;
+
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -26,14 +31,12 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     _cargarMisReportes();
   }
 
-  // ¡IMPORTANTE! Liberar memoria
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
 
-  // FUNCIÓN PARA ANIMAR HACIA ARRIBA
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -46,6 +49,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
 
   Future<void> _cargarMisReportes() async {
     setState(() => _isLoading = true);
+    _rangoInicio = 0;
+    _hayMasDatos = true;
     
     try {
       final supabase = Supabase.instance.client;
@@ -59,12 +64,14 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
       ''')
       .eq('usuario_id', miUserId) 
       .eq('visible', true) 
-      .order('id', ascending: false); 
+      .order('id', ascending: false)
+      .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1); 
 
       if (mounted) {
         setState(() {
           _misReportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
+          if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
       }
     } catch (e) {
@@ -73,11 +80,47 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     }
   }
 
+  Future<void> _cargarMasReportes() async {
+    if (_cargandoMas || !_hayMasDatos) return;
+
+    setState(() => _cargandoMas = true);
+    _rangoInicio += _cantidadPorPagina;
+
+    try {
+      final supabase = Supabase.instance.client;
+      final miUserId = supabase.auth.currentUser!.id;
+
+      final response = await supabase.from('reportes').select('''
+        id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
+        cat_categorias (id, nombre, icono, color),
+        perfiles!inner (nombre, estudiantes(numero_control)),
+        reporte_ubicaciones!inner (lugar_id, cat_lugares(id, nombre))
+      ''')
+      .eq('usuario_id', miUserId) 
+      .eq('visible', true) 
+      .order('id', ascending: false)
+      .range(_rangoInicio, _rangoInicio + _cantidadPorPagina - 1);
+
+      if (mounted) {
+        setState(() {
+          if (response.isEmpty) {
+            _hayMasDatos = false; 
+          } else {
+            _misReportes.addAll(List<Map<String, dynamic>>.from(response));
+            if (response.length < _cantidadPorPagina) _hayMasDatos = false;
+          }
+          _cargandoMas = false; 
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _cargandoMas = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
-    // ENVOLVEMOS LA PANTALLA EN ATAJOS LOCALES
     return CallbackShortcuts(
       bindings: {
         SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
@@ -87,7 +130,6 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            // TÍTULO TÁCTIL PARA REGRESAR ARRIBA
             title: GestureDetector(
               onTap: _scrollToTop,
               child: const Text("Mis Reportes"),
@@ -109,10 +151,30 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                       ),
                     )
                   : ListView.builder(
-                      controller: _scrollController, // <--- CONECTAMOS EL CONTROLADOR
+                      controller: _scrollController, 
+                      cacheExtent: 2500, // <--- ¡SIN PARPADEOS!
                       padding: const EdgeInsets.all(12),
-                      itemCount: _misReportes.length,
+                      itemCount: _misReportes.length + 1, // +1 para el botón
                       itemBuilder: (context, index) {
+                        
+                        if (index == _misReportes.length) {
+                          if (!_hayMasDatos) return const SizedBox.shrink();
+                          
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: _cargandoMas
+                              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                              : Center(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _cargarMasReportes,
+                                    icon: const Icon(Icons.add, color: Color(0xFF800000)),
+                                    label: const Text("Cargar más", style: TextStyle(color: Color(0xFF800000))),
+                                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                  ),
+                                ),
+                          );
+                        }
+
                         final reporte = _misReportes[index];
                         return TarjetaReporteOptimizada(
                           reporte: reporte,

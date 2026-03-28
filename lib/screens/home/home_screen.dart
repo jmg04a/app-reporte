@@ -6,8 +6,26 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'; // <--- ¡NUEVO MOTOR DE CACHÉ!
 import '../reportes/report_detail_screen.dart'; 
-import '../reportes/filter_screen.dart';
+
+
+// =====================================================================
+// ¡NUEVO! GESTOR DE CACHÉ INTELIGENTE (Toda la app usará esto)
+// =====================================================================
+class GestorCacheReportes {
+  static const key = 'reportesCacheKey';
+  
+  static CacheManager instance = CacheManager(
+    Config(
+      key,
+      stalePeriod: const Duration(days: 7), // Borra fotos de más de 7 días sin verse
+      maxNrOfCacheObjects: 50, // Solo mantiene 50 fotos en almacenamiento
+      repo: JsonCacheInfoRepository(databaseName: key),
+      fileService: HttpFileService(),
+    ),
+  );
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,7 +43,6 @@ class HomeScreenState extends State<HomeScreen> {
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
-  // 1. EL CONTROLADOR DE LA LISTA
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -34,14 +51,12 @@ class HomeScreenState extends State<HomeScreen> {
     cargarReportes(); 
   }
 
-  // ¡IMPORTANTE! Liberar memoria al cerrar
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
 
-  // FUNCIÓN PARA ANIMAR HACIA ARRIBA
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -87,7 +102,6 @@ class HomeScreenState extends State<HomeScreen> {
           _isLoading = false;
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
-        
         prefs.setString('reportes_cache', jsonEncode(response));
       }
     } catch (e) {
@@ -128,20 +142,10 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void abrirPantallaFiltros() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const FilterScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
-    // ENVOLVEMOS LA PANTALLA EN ATAJOS LOCALES
     return CallbackShortcuts(
       bindings: {
         SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
@@ -151,7 +155,6 @@ class HomeScreenState extends State<HomeScreen> {
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            // TÍTULO TÁCTIL PARA REGRESAR ARRIBA
             title: GestureDetector(
               onTap: _scrollToTop,
               child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -174,14 +177,13 @@ class HomeScreenState extends State<HomeScreen> {
                         ],
                       )
                     : ListView.builder(
-                        controller: _scrollController, // <--- CONECTAMOS EL CONTROLADOR
+                        controller: _scrollController, 
+                        cacheExtent: 2500, // <--- ¡EVITA EL PARPADEO AL HACER SCROLL!
                         padding: const EdgeInsets.all(12),
                         itemCount: _reportes.length + 1, 
                         itemBuilder: (context, index) {
-                          
                           if (index == _reportes.length) {
                             if (!_hayMasDatos) return const SizedBox.shrink();
-                            
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 20),
                               child: _cargandoMas
@@ -234,7 +236,6 @@ class TarjetaReporteOptimizada extends StatelessWidget {
   static Color _getColorFromHex(String? hexColor) {
     if (hexColor == null || hexColor.isEmpty) return Colors.grey;
     if (_colorCache.containsKey(hexColor)) return _colorCache[hexColor]!;
-    
     final hexCode = hexColor.replaceAll('#', '');
     final color = Color(int.parse('FF$hexCode', radix: 16));
     _colorCache[hexColor] = color;
@@ -295,7 +296,6 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                 child: Icon(_getIconFromName(iconoCategoria), color: colorBase),
               ),
               const SizedBox(width: 12), 
-              
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -336,7 +336,6 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                   ],
                 ),
               ),
-              
               const SizedBox(width: 8), 
               if (reacciones > 0) 
                 Column(
@@ -347,11 +346,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                       children: [
                         Text(
                           reacciones.toString(),
-                          style: const TextStyle(
-                            fontSize: 15, 
-                            fontWeight: FontWeight.bold, 
-                            color: Color(0xFF800000)
-                          ),
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF800000)),
                         ),
                         const SizedBox(width: 4), 
                         const Icon(Icons.group, size: 16, color: Color(0xFF800000)), 
@@ -369,6 +364,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
               imageUrl != null
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
+                      cacheManager: GestorCacheReportes.instance, // <--- ¡AQUÍ ESTÁ LA MAGIA DEL ALMACENAMIENTO!
                       memCacheWidth: 150, 
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,

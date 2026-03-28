@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // --- IMPORTANTE: Conecta este archivo con tu main.dart ---
-import '../../main.dart'; // <--- AJUSTA ESTA RUTA HACIA TU main.dart SI ES NECESARIO
+import '../../main.dart'; 
 
 import '../reportes/filter_screen.dart'; 
 import 'home_screen.dart';
@@ -34,7 +34,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     // ESCUCHAMOS EL TECLADO GLOBAL
     globalTabIndex.addListener(() {
-      // Solo actualizamos si el valor es Home (0) o Perfil (3)
       if (mounted && (globalTabIndex.value == 0 || globalTabIndex.value == 3)) {
         setState(() {
           _indiceActual = globalTabIndex.value;
@@ -100,26 +99,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  Widget _construirPantalla() {
-    if (_indiceActual == 3) {
-      return ProfileScreen(
-        nombre: _nombreUsuario,
-        rol: _rolUsuario,
-        avatarUrl: _avatarUrl,
-        onNombreCambiado: (nuevoNombre) {
-          setState(() => _nombreUsuario = nuevoNombre);
-        },
-        onAvatarCambiado: (nuevaUrl) {
-          setState(() => _avatarUrl = nuevaUrl);
-        },
-      );
-    }
-    
-    return HomeScreen(key: _homeKey);
-  }
+  // ¡SE ELIMINÓ LA FUNCIÓN _construirPantalla()!
 
   @override
   Widget build(BuildContext context) {
+    // Lógica inteligente: Si el índice de la barra es 3 (Perfil), mostramos el índice 1 del Stack.
+    // De lo contrario, mostramos el índice 0 del Stack (Home).
+    int stackIndex = _indiceActual == 3 ? 1 : 0;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) async {
@@ -127,29 +114,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         await _salirDeLaApp();
       },
       child: Scaffold(
-        body: _construirPantalla(),
+        // =========================================================
+        // AQUÍ ESTÁ LA MAGIA: INDEXEDSTACK PARA PRESERVAR EL ESTADO
+        // =========================================================
+        body: IndexedStack(
+          index: stackIndex,
+          children: [
+            // Índice 0 del Stack: HomeScreen (Se mantiene vivo siempre)
+            HomeScreen(key: _homeKey),
+            
+            // Índice 1 del Stack: ProfileScreen (Se mantiene vivo siempre)
+            ProfileScreen(
+              nombre: _nombreUsuario,
+              rol: _rolUsuario,
+              avatarUrl: _avatarUrl,
+              onNombreCambiado: (nuevoNombre) {
+                setState(() => _nombreUsuario = nuevoNombre);
+              },
+              onAvatarCambiado: (nuevaUrl) {
+                setState(() => _avatarUrl = nuevaUrl);
+              },
+            ),
+          ],
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _indiceActual,
           onDestinationSelected: (int index) async {
             if (index == 1) {
-              // 1. BÚSQUEDA: Abre encima de la barra
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const FilterScreen()),
               );
             } else if (index == 2) {
-              // 2. CREAR REPORTE: Abre encima de la barra
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const CreateReportScreen()),
               );
               _homeKey.currentState?.cargarReportes();
               
-              // Regresamos al Home y sincronizamos el control global
               setState(() => _indiceActual = 0);
               globalTabIndex.value = 0; 
             } else {
-              // 0 y 3 (HOME Y PERFIL): Cambian de pestaña en la misma barra
               setState(() => _indiceActual = index);
               globalTabIndex.value = index; 
             }
