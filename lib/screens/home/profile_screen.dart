@@ -212,6 +212,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final carreraObj = _carreras.firstWhere((c) => c['id'] == nuevaCarreraId);
         final nuevaCarreraNombre = carreraObj['nombre'];
 
+        // ¡ESCUDO AQUÍ!
+        if (!mounted) return;
+
         setState(() {
           _carreraIdActual = nuevaCarreraId;
           _nombreCarreraActual = nuevaCarreraNombre;
@@ -277,6 +280,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         
         await supabase.from('perfiles').update({'nombre': nuevoNombre}).eq('id', userId);
         
+        // ¡ESCUDO AQUÍ!
+        if (!mounted) return;
+
         setState(() => _nombreActual = nuevoNombre);
         
         final prefs = await SharedPreferences.getInstance();
@@ -336,6 +342,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await CachedNetworkImage.evictFromCache(imageUrl);
 
+      // ¡ESCUDO AQUÍ!
+      if (!mounted) return;
+
       setState(() {
         _currentAvatarUrl = imageUrl;
         _isUploading = false;
@@ -393,6 +402,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (confirmar == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('usuario_perfil'); 
+      await prefs.remove('reportes_cache'); // <--- ¡AGREGA ESTO!
+      await prefs.remove('reporte_borrador'); // <--- Y ESTO TAMBIÉN
 
       try {
         await Supabase.instance.client.auth.signOut();

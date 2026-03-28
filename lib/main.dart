@@ -17,6 +17,34 @@ import 'screens/reportes/create_report_screen.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final ValueNotifier<int> globalTabIndex = ValueNotifier<int>(0); // 0 = Home, 3 = Perfil
 
+// =======================================================
+// ¡NUEVO! FUNCIÓN EXPERTA PARA NAVEGACIÓN GLOBAL SEGURA
+// =======================================================
+void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
+  bool yaEstaEnTop = false;
+  
+  // 1. Revisamos qué pantalla está hasta arriba en este instante
+  navigatorKey.currentState?.popUntil((route) {
+    yaEstaEnTop = route.settings.name == nombreRuta;
+    return true; // Retornar true hace que no cierre nada, solo es para espiar
+  });
+
+  // 2. Si ya estamos exactamente en esa pantalla, la dejamos en paz
+  if (yaEstaEnTop) return;
+
+  // 3. Si estábamos en OTRA pantalla secundaria, limpiamos la pila 
+  // cerrando todo hasta llegar a la base (MainNavigationScreen)
+  navigatorKey.currentState?.popUntil((route) => route.isFirst);
+  
+  // 4. Ahora sí, abrimos la pantalla solicitada sobre una base limpia
+  navigatorKey.currentState?.push(
+    MaterialPageRoute(
+      settings: RouteSettings(name: nombreRuta),
+      builder: (_) => pantalla
+    )
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -69,19 +97,18 @@ class MyApp extends StatelessWidget {
 
         // 2. BUSCAR: Ctrl + F o Cmd + F
         SingleActivator(LogicalKeyboardKey.keyF, control: !isMac, meta: isMac): () {
-          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const FilterScreen()));
+          _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
 
-        // 3. BUSCAR: Ctrl + K o Cmd + K 
+        // 3.  BUSCAR Alternativo: Ctrl + K o Cmd + K 
         SingleActivator(LogicalKeyboardKey.keyK, control: !isMac, meta: isMac): () {
-          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const FilterScreen()));
+          _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
 
         // 4. CREAR NUEVO: Ctrl + N o Cmd + N
         SingleActivator(LogicalKeyboardKey.keyN, control: !isMac, meta: isMac): () {
-          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const CreateReportScreen()));
+          _abrirPantallaGlobal('/crear_reporte', const CreateReportScreen());
         },
-
         // 5. INICIO (HOME): Ctrl + H o Cmd + H
         SingleActivator(LogicalKeyboardKey.keyH, control: !isMac, meta: isMac): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst); 

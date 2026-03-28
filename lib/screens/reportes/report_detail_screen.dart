@@ -17,14 +17,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   
   // --- VARIABLES DE PERMISOS Y ESTADO ---
   bool _isAdmin = false;
-  bool _isCreator = false; // ¡NUEVO! Para saber si el usuario creó este reporte
+  bool _isCreator = false; 
   String _estadoActual = 'pendiente';
 
   // --- VARIABLES PARA REACCIONES ---
   bool _yaReacciono = false;
   int _contadorReacciones = 0;
 
-  // Lista de estados permitidos en el sistema
   final List<String> _estadosDisponibles = ['pendiente', 'en proceso', 'resuelto'];
 
   @override
@@ -38,7 +37,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       final supabase = Supabase.instance.client;
       final currentUserId = supabase.auth.currentUser!.id;
 
-      // 1. Verificamos si el usuario actual es administrador
       try {
         final currentUserData = await supabase
             .from('perfiles')
@@ -53,7 +51,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         debugPrint("Error verificando rol: $e");
       }
 
-      // 2. Descargamos el reporte cruzando datos con cat_categorias, perfiles y estudiantes
       final reporteData = await supabase.from('reportes').select('''
         *,
         cat_categorias (nombre, icono, color),
@@ -64,12 +61,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         )
       ''').eq('id', widget.reporteId).single();
 
-      // 3. Descargamos el nombre del lugar
       final ubicacionData = await supabase.from('reporte_ubicaciones').select('''
         cat_lugares (nombre)
       ''').eq('reporte_id', widget.reporteId).maybeSingle();
 
-      // 4. Verificamos si el usuario actual ya reaccionó a este reporte
       final reaccionData = await supabase
           .from('reacciones')
           .select('id')
@@ -83,10 +78,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           _estadoActual = reporteData['estado'] ?? 'pendiente';
           _ubicacionExacta = ubicacionData?['cat_lugares']?['nombre'] ?? 'Ubicación no especificada';
           
-          // Guardamos el conteo, la reacción y si ES EL CREADOR
           _contadorReacciones = reporteData['reaccion_count'] ?? 0;
           _yaReacciono = reaccionData != null; 
-          _isCreator = reporteData['usuario_id'] == currentUserId; // ¡Validación de creador!
+          _isCreator = reporteData['usuario_id'] == currentUserId; 
           
           _isLoading = false;
         });
@@ -99,7 +93,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // --- FUNCIÓN DEL ADMINISTRADOR PARA CAMBIAR ESTADO ---
   Future<void> _actualizarEstado(String nuevoEstado) async {
     if (nuevoEstado == _estadoActual) return;
 
@@ -112,6 +105,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           .from('reportes')
           .update({'estado': nuevoEstado})
           .eq('id', widget.reporteId);
+
+      // ¡NUEVO! EL ESCUDO PROTECTOR
+      if (!mounted) return;
 
       setState(() {
         _estadoActual = nuevoEstado;
@@ -131,7 +127,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // --- FUNCIÓN PARA EL BOTÓN DE "ME GUSTA" ---
   Future<void> _toggleReaccion() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser!.id;
@@ -166,7 +161,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // --- ¡NUEVO! FUNCIÓN PARA BORRADO LÓGICO ---
   Future<void> _borrarReporte() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -195,7 +189,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     if (confirmar == true) {
       try {
-        // Hacemos el "Soft Delete" apagando la visibilidad
         await Supabase.instance.client
             .from('reportes')
             .update({'visible': false})
@@ -205,7 +198,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Reporte eliminado exitosamente'), backgroundColor: Colors.green),
           );
-          // Sacamos al usuario de esta pantalla porque el reporte "ya no existe"
           Navigator.pop(context); 
         }
       } catch (e) {
@@ -233,6 +225,26 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  // ============================================================
+  // ¡NUEVO! FUNCIÓN PARA FORMATEAR LA FECHA DE LA BASE DE DATOS
+  // ============================================================
+  String _formatearFecha(String? fechaIso) {
+    if (fechaIso == null) return 'Fecha desconocida';
+    try {
+      final fecha = DateTime.parse(fechaIso).toLocal();
+      final meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      
+      final ampm = fecha.hour >= 12 ? 'PM' : 'AM';
+      int hora = fecha.hour > 12 ? fecha.hour - 12 : fecha.hour;
+      if (hora == 0) hora = 12;
+      final minutos = fecha.minute.toString().padLeft(2, '0');
+      
+      return '${fecha.day} de ${meses[fecha.month - 1]}, ${fecha.year} a las $hora:$minutos $ampm';
+    } catch (e) {
+      return 'Fecha no válida';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -247,10 +259,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final categoria = reporte['cat_categorias'];
     final imageUrl = reporte['evidencia_url'];
     
-    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR
+    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR Y FECHA
     final perfilCreador = reporte['perfiles']; 
     final nombreCreador = perfilCreador?['nombre'] ?? 'Usuario Desconocido';
     final avatarUrl = perfilCreador?['avatar_url'];
+    final fechaFormateada = _formatearFecha(reporte['created_at']); // <--- APLICAMOS EL FORMATO AQUÍ
     
     String? numeroControl;
     final dataEstudiante = perfilCreador?['estudiantes'];
@@ -356,7 +369,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 4. TARJETA DE QUIÉN LO REPORTÓ
+                  // 4. TARJETA DE QUIÉN LO REPORTÓ Y LA FECHA
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -381,6 +394,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               Text(nombreCreador, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                               if (numeroControl != null)
                                 Text("No. Control: $numeroControl", style: const TextStyle(fontSize: 14, color: Colors.blueGrey)),
+                              
+                              const SizedBox(height: 4),
+                              // ==========================================
+                              // ¡AQUÍ ESTÁ LA FECHA AGREGADA!
+                              // ==========================================
+                              Row(
+                                children: [
+                                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                                  const SizedBox(width: 4),
+                                  Text(fechaFormateada, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                ],
+                              ),
                             ],
                           ),
                         )
@@ -452,10 +477,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 30),
 
-                  // ==========================================
-                  // 7. ¡NUEVO! BOTÓN DE ELIMINAR REPORTE
-                  // Solo visible para Administradores o el Creador
-                  // ==========================================
+                  // 7. BOTÓN DE ELIMINAR REPORTE
                   if (_isAdmin || _isCreator) ...[
                     const Divider(),
                     const SizedBox(height: 10),
