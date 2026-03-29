@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'create_report_screen.dart'; // <--- ¡NUEVA IMPORTACIÓN!
+import 'create_report_screen.dart'; 
 
+/// Comprehensive detail view for a specific report.
+///
+/// Implements Role-Based Access Control (RBAC) at the UI level:
+/// - **Admins:** Can mutate the resolution state (Pending -> In Progress -> Resolved) and soft-delete.
+/// - **Creators:** Can edit the payload (if pending) and soft-delete their own reports.
+/// - **Standard Users:** Can view details and toggle their "Me too" reaction.
 class ReportDetailScreen extends StatefulWidget {
   final int reporteId;
 
@@ -16,12 +22,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   String _ubicacionExacta = "Cargando...";
   bool _isLoading = true;
   
-  // --- VARIABLES DE PERMISOS Y ESTADO ---
+  // --- RBAC and State Variables ---
   bool _isAdmin = false;
   bool _isCreator = false; 
   String _estadoActual = 'pendiente';
 
-  // --- VARIABLES PARA REACCIONES ---
+  // --- Reaction Mechanics Variables ---
   bool _yaReacciono = false;
   int _contadorReacciones = 0;
 
@@ -33,11 +39,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     _cargarDetalles();
   }
 
+  /// Fetches the comprehensive payload for the requested report.
+  ///
+  /// Resolves all required foreign keys (category, user, location) and 
+  /// performs parallel checks to establish the current user's RBAC privileges 
+  /// and previous reaction state.
   Future<void> _cargarDetalles() async {
     try {
       final supabase = Supabase.instance.client;
       final currentUserId = supabase.auth.currentUser!.id;
 
+      // Determine administrative privileges
       try {
         final currentUserData = await supabase
             .from('perfiles')
@@ -52,6 +64,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         debugPrint("Error verificando rol: $e");
       }
 
+      // Fetch primary payload with inner joins
       final reporteData = await supabase.from('reportes').select('''
         *,
         cat_categorias (nombre, icono, color),
@@ -66,6 +79,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         cat_lugares (nombre)
       ''').eq('reporte_id', widget.reporteId).maybeSingle();
 
+      // Determine if the current user has already reacted to this report
       final reaccionData = await supabase
           .from('reacciones')
           .select('id')
@@ -94,6 +108,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  /// Mutates the resolution state of the report (Admin only).
   Future<void> _actualizarEstado(String nuevoEstado) async {
     if (nuevoEstado == _estadoActual) return;
 
@@ -127,10 +142,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  /// Toggles the user's reaction to the report.
+  ///
+  /// Implements an Optimistic UI approach: the local state (reaction count and toggle) 
+  /// is mutated immediately before the network request finishes, providing instant 
+  /// feedback. If the network request fails, the state is rolled back in the `catch` block.
   Future<void> _toggleReaccion() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser!.id;
 
+    // Optimistic update
     setState(() {
       _yaReacciono = !_yaReacciono;
       _contadorReacciones += _yaReacciono ? 1 : -1;
@@ -149,6 +170,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             .match({'reporte_id': widget.reporteId, 'usuario_id': userId});
       }
     } catch (e) {
+      // Rollback on failure
       if (mounted) {
         setState(() {
           _yaReacciono = !_yaReacciono;
@@ -161,6 +183,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
+  /// Executes a "Soft Delete" on the report.
+  ///
+  /// Instead of a destructive SQL DELETE, it sets the `visible` flag to false. 
+  /// This maintains referential integrity in the database and preserves historical 
+  /// data for administrative audits while hiding it from the public feeds.
   Future<void> _borrarReporte() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -276,9 +303,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
         actions: [
-          // ==========================================
-          // ¡NUEVO! BOTÓN DE EDITAR
-          // ==========================================
+          // Edit permission explicitly constrained to the original creator 
+          // and only when the report is still in 'pending' status.
           if (_isCreator && _estadoActual.toLowerCase() == 'pendiente')
             IconButton(
               icon: const Icon(Icons.edit),
@@ -290,7 +316,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     builder: (context) => CreateReportScreen(reporteExistente: _reporteCompleto),
                   ),
                 );
-                _cargarDetalles(); // Recargamos la info por si cambió
+                _cargarDetalles(); 
               },
             ),
         ],

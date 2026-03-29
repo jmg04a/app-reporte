@@ -4,6 +4,11 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'resultados_busqueda_screen.dart'; 
 
+/// Search and filtering interface for the report catalog.
+///
+/// Acts as a query parameter builder. Aggregates multiple state variables
+/// (text, foreign keys, enums) into a unified filter payload, which is then 
+/// passed to the [ResultadosBusquedaScreen] for execution.
 class FilterScreen extends StatefulWidget {
   const FilterScreen({super.key});
 
@@ -12,22 +17,26 @@ class FilterScreen extends StatefulWidget {
 }
 
 class _FilterScreenState extends State<FilterScreen> {
+  // --- Text-based Filters ---
   final _usuarioController = TextEditingController();
   final _tituloController = TextEditingController();
 
+  // --- Relational Dictionaries ---
   List<Map<String, dynamic>> _categorias = [];
   List<Map<String, dynamic>> _lugares = [];
-  List<Map<String, dynamic>> _carreras = []; // ¡NUEVO: Lista de carreras!
+  List<Map<String, dynamic>> _carreras = []; 
   
   bool _isLoadingData = true;
 
+  // --- Active Filter States ---
   int? _selectedCategoriaId;
   int? _selectedLugarId;
-  int? _selectedCarreraId; // ¡NUEVO: Control de la carrera seleccionada!
+  int? _selectedCarreraId; 
   
   String _selectedEstado = 'todos';
   String _selectedOrdenReacciones = 'recientes';
 
+  // --- Autocomplete State ---
   String _lugarTextoActual = '';
   Key _autocompleteKey = UniqueKey();
 
@@ -37,8 +46,14 @@ class _FilterScreenState extends State<FilterScreen> {
     _cargarCatalogos();
   }
 
+  /// Bootstraps the form by concurrently fetching all required foreign key dictionaries.
+  ///
+  /// Implements an Optimistic UI approach by rendering cached dictionaries instantly 
+  /// before fetching the fresh catalog from Supabase.
   Future<void> _cargarCatalogos() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Hydrate from local cache
     final catsCache = prefs.getString('categorias_cache');
     final lugsCache = prefs.getString('lugares_cache');
     final carrsCache = prefs.getString('carreras_cache');
@@ -52,26 +67,34 @@ class _FilterScreenState extends State<FilterScreen> {
 
     try {
       final supabase = Supabase.instance.client;
+      
+      // 2. Fetch all dictionaries concurrently to prevent network waterfalls
       final respuestas = await Future.wait([
         supabase.from('cat_categorias').select('id, nombre').order('nombre'),
         supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre'),
-        supabase.from('cat_carreras').select('id, nombre').order('nombre') // Cargamos las carreras
+        supabase.from('cat_carreras').select('id, nombre').order('nombre') 
       ]);
 
       final catsNube = respuestas[0];
       final lugsNube = respuestas[1];
       final carrsNube = respuestas[2];
 
+      // 3. Persist fresh data back to local storage
       prefs.setString('categorias_cache', jsonEncode(catsNube));
       prefs.setString('lugares_cache', jsonEncode(lugsNube));
       prefs.setString('carreras_cache', jsonEncode(carrsNube));
 
       _procesarYMostrarCatalogos(catsNube, lugsNube, carrsNube);
     } catch (e) {
+      // Fallback: If network fails and cache is empty, stop the loading spinner
       if (mounted && _categorias.isEmpty) setState(() => _isLoadingData = false);
     }
   }
 
+  /// Flattens the hierarchical location data into a 1D searchable array.
+  /// 
+  /// Resolves the 'parent_id' relationship to append the parent building name
+  /// to specific rooms (e.g., "Aula 3" becomes "Aula 3 (Sistemas)") for better UX.
   void _procesarYMostrarCatalogos(List<dynamic> catsRaw, List<dynamic> lugsRaw, List<dynamic> carrsRaw) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
@@ -102,13 +125,15 @@ class _FilterScreenState extends State<FilterScreen> {
       setState(() {
         _categorias = List<Map<String, dynamic>>.from(catsRaw);
         _lugares = lugaresFormateados;
-        _carreras = List<Map<String, dynamic>>.from(carrsRaw); // Guardamos las carreras
+        _carreras = List<Map<String, dynamic>>.from(carrsRaw); 
         _isLoadingData = false; 
       });
     }
   }
 
+  /// Compiles the active state into a unified payload and triggers navigation.
   void _aplicar() {
+    // Validation: Ensure the typed location actually maps to a valid foreign key ID
     if (_selectedLugarId == null && _lugarTextoActual.trim().isNotEmpty) {
       final matchExacto = _lugares.where((l) =>
           l['nombreBuscable'].toString().toLowerCase() == _lugarTextoActual.trim().toLowerCase()).toList();
@@ -123,16 +148,18 @@ class _FilterScreenState extends State<FilterScreen> {
       }
     }
 
+    // Construction of the query payload
     final filtros = {
       'usuario': _usuarioController.text.trim(),
       'titulo': _tituloController.text.trim(),
       'categoriaId': _selectedCategoriaId,
       'lugarId': _selectedLugarId,
-      'carreraId': _selectedCarreraId, // ¡Enviamos el nuevo filtro de carrera!
+      'carreraId': _selectedCarreraId, 
       'estado': _selectedEstado,
       'ordenReacciones': _selectedOrdenReacciones,
     };
     
+    // Imperative routing to the results view, replacing the current route
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -141,7 +168,7 @@ class _FilterScreenState extends State<FilterScreen> {
     );
   }
 
-  // ¡NUEVO: Cuadro de diálogo estándar para confirmar!
+  /// Prompts for confirmation before executing a full state wipe.
   Future<void> _confirmarLimpiar() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -173,22 +200,27 @@ class _FilterScreenState extends State<FilterScreen> {
     }
   }
 
+  /// Resets all form controllers and active state variables to their default values.
   void _limpiar() {
     setState(() {
       _usuarioController.clear();
       _tituloController.clear();
       _selectedCategoriaId = null;
       _selectedLugarId = null;
-      _selectedCarreraId = null; // Limpiamos la carrera
+      _selectedCarreraId = null; 
       _selectedEstado = 'todos';
       _selectedOrdenReacciones = 'recientes';
       _lugarTextoActual = '';
+      
+      // Forcing a new UniqueKey ensures the Autocomplete widget fully rebuilds and clears its internal state.
       _autocompleteKey = UniqueKey(); 
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    // --- Defensive Checks ---
+    // Ensure selected IDs actually exist in the fetched dictionaries to prevent crash on Dropdown rendering.
     bool categoriaExiste = _selectedCategoriaId == null || _categorias.any((c) => c['id'] == _selectedCategoriaId);
     int? safeCategoriaId = categoriaExiste ? _selectedCategoriaId : null;
 
@@ -217,7 +249,6 @@ class _FilterScreenState extends State<FilterScreen> {
         title: const Text("Filtros de Búsqueda"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
-        // ¡Se eliminó el botón de limpiar de la barra superior!
       ),
       body: _isLoadingData
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
@@ -279,6 +310,7 @@ class _FilterScreenState extends State<FilterScreen> {
                           hintText: "Ej. 19, Sistemas, Aula 3",
                           prefixIcon: const Icon(Icons.location_on),
                           border: const OutlineInputBorder(),
+                          // Clear button inside the Autocomplete text field
                           suffixIcon: _selectedLugarId != null || _lugarTextoActual.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, color: Colors.grey),
@@ -347,7 +379,6 @@ class _FilterScreenState extends State<FilterScreen> {
 
                   const SizedBox(height: 15),
 
-                  // ¡NUEVO: Dropdown de Carreras!
                   DropdownButtonFormField<int>(
                     initialValue: safeCarreraId, 
                     decoration: const InputDecoration(labelText: "Carrera del estudiante (Opcional)", prefixIcon: Icon(Icons.school), border: OutlineInputBorder()),
@@ -391,7 +422,6 @@ class _FilterScreenState extends State<FilterScreen> {
 
                   const SizedBox(height: 30),
 
-                  // ¡NUEVO: Fila con botón de Búsqueda y Bote de Basura!
                   Row(
                     children: [
                       Expanded(
@@ -402,7 +432,7 @@ class _FilterScreenState extends State<FilterScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
-                          icon: const Icon(Icons.search), // Lupa en vez del embudo
+                          icon: const Icon(Icons.search), 
                           label: const Text("BUSCAR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           onPressed: _aplicar,
                         ),
@@ -418,7 +448,7 @@ class _FilterScreenState extends State<FilterScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: _confirmarLimpiar,
-                        child: const Icon(Icons.delete_outline), // Bote de basura
+                        child: const Icon(Icons.delete_outline), 
                       ),
                     ],
                   )

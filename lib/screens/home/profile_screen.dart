@@ -7,11 +7,17 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mis_reportes_screen.dart';
 
+/// User profile management interface.
+///
+/// Implements an Optimistic UI pattern: it immediately renders cached data 
+/// via [SharedPreferences] to ensure 0-second loading times, while 
+/// asynchronously fetching fresh metadata from the Supabase backend.
 class ProfileScreen extends StatefulWidget {
   final String nombre;
   final String rol; 
   final String? avatarUrl;
   
+  /// Callbacks to notify the parent shell ([MainNavigationScreen]) of state mutations.
   final Function(String)? onNombreCambiado; 
   final Function(String)? onAvatarCambiado;
 
@@ -36,9 +42,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   
   String _correoUsuario = '';
 
-  // ==========================================
-  // VARIABLES PARA LA CARRERA (ESTUDIANTES)
-  // ==========================================
+  /// Student-specific metadata states.
+  /// If [_esEstudiante] is true, the UI unlocks academic major management.
   bool _esEstudiante = false;
   String? _numeroControl;
   int? _carreraIdActual;
@@ -48,27 +53,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    // 1. Inherit initial state from parent shell.
     _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
     final usuarioActual = Supabase.instance.client.auth.currentUser;
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
 
+    // 2. Trigger asynchronous data resolution.
     _cargarPerfilDesdeCache();
     _cargarPerfilFresco();
   }
 
-  // --- LECTURA INSTANTÁNEA (CACHÉ) ---
+  /// Instantly loads offline-available data from device storage.
   Future<void> _cargarPerfilDesdeCache() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 1. Cargamos el catálogo de carreras si ya existe
     final carrsCache = prefs.getString('carreras_cache');
     if (carrsCache != null) {
       _carreras = List<Map<String, dynamic>>.from(jsonDecode(carrsCache));
     }
 
-    // 2. Cargamos los datos del usuario
     final perfilStr = prefs.getString('usuario_perfil');
     if (perfilStr != null && mounted) {
       final perfilCache = jsonDecode(perfilStr);
@@ -76,7 +81,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (perfilCache['nombre'] != null) _nombreActual = perfilCache['nombre'];
         if (perfilCache['avatar_url'] != null) _currentAvatarUrl = perfilCache['avatar_url'];
         
-        // Verificamos si en el caché ya sabíamos que era estudiante
+        // Hydrate student context if present in the cached payload.
         if (perfilCache['carrera_id'] != null) {
           _esEstudiante = true;
           _carreraIdActual = perfilCache['carrera_id'];
@@ -87,13 +92,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // --- BUSCAR DATOS FRESCOS EN SUPABASE ---
+  /// Fetches the authoritative user state from the Postgres database.
   Future<void> _cargarPerfilFresco() async {
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
       
-      // 1. Descargamos el catálogo de carreras por si agregaron nuevas
+      // Update local dictionary of academic majors.
       final carrerasData = await supabase.from('cat_carreras').select('id, nombre').order('nombre');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('carreras_cache', jsonEncode(carrerasData));
@@ -102,7 +107,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() => _carreras = List<Map<String, dynamic>>.from(carrerasData));
       }
 
-      // 2. Traemos el perfil Y sus datos de estudiante (si los tiene)
+      // Perform an inner join between 'perfiles' and 'estudiantes' to 
+      // fetch extended role-based metadata in a single network request.
       final data = await supabase
           .from('perfiles')
           .select('nombre, avatar_url, estudiantes(numero_control, carrera_id)')
@@ -114,9 +120,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _nombreActual = data['nombre'] ?? _nombreActual;
           if (data['avatar_url'] != null) _currentAvatarUrl = data['avatar_url']; 
 
-          // Evaluamos si es estudiante
+          // Evaluate the relational payload to determine student privileges.
           if (data['estudiantes'] != null) {
-            // Dependiendo de cómo armaste la base, puede devolver una Lista o un Mapa
             var estData = data['estudiantes'];
             if (estData is List && estData.isNotEmpty) estData = estData[0];
             
@@ -125,7 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _numeroControl = estData['numero_control'];
               _carreraIdActual = estData['carrera_id'];
               
-              // Buscamos el nombre de la carrera en el catálogo que descargamos
+              // Map the foreign key to its human-readable label.
               final carreraObj = _carreras.firstWhere(
                 (c) => c['id'] == _carreraIdActual, 
                 orElse: () => {'nombre': 'Carrera no asignada o borrada'}
@@ -135,7 +140,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         });
 
-        // 3. Guardamos todo en el Caché para la próxima vez
+        // Persist the fresh authoritative payload to local cache.
         final perfilStr = prefs.getString('usuario_perfil');
         Map<String, dynamic> perfilCache = perfilStr != null ? jsonDecode(perfilStr) : {};
         
@@ -153,9 +158,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ==========================================
-  // FUNCIÓN PARA CAMBIAR CARRERA
-  // ==========================================
+  /// Mutates the academic major (foreign key) for student accounts.
   Future<void> _cambiarCarrera() async {
     if (_carreras.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cargando catálogo de carreras, espera un segundo...")));
@@ -197,22 +200,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
     );
 
-    // Si eligió una nueva y es diferente a la que ya tenía
     if (nuevaCarreraId != null && nuevaCarreraId != _carreraIdActual) {
       try {
         final supabase = Supabase.instance.client;
         
-        // Actualizamos en la tabla estudiantes usando su número de control como ancla
+        // Mutate the related record in the 'estudiantes' table.
         await supabase
             .from('estudiantes')
             .update({'carrera_id': nuevaCarreraId})
             .eq('numero_control', _numeroControl!);
 
-        // Buscamos el nuevo nombre en la lista
         final carreraObj = _carreras.firstWhere((c) => c['id'] == nuevaCarreraId);
         final nuevaCarreraNombre = carreraObj['nombre'];
 
-        // ¡ESCUDO AQUÍ!
         if (!mounted) return;
 
         setState(() {
@@ -220,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _nombreCarreraActual = nuevaCarreraNombre;
         });
 
-        // Actualizamos el Caché
+        // Sync local cache with the new mutation.
         final prefs = await SharedPreferences.getInstance();
         final perfilStr = prefs.getString('usuario_perfil');
         if (perfilStr != null) {
@@ -241,6 +241,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  /// Mutates the user's full name.
   Future<void> _cambiarNombre() async {
     final controller = TextEditingController(text: _nombreActual);
     
@@ -280,11 +281,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         
         await supabase.from('perfiles').update({'nombre': nuevoNombre}).eq('id', userId);
         
-        // ¡ESCUDO AQUÍ!
         if (!mounted) return;
 
         setState(() => _nombreActual = nuevoNombre);
         
+        // Sync cache.
         final prefs = await SharedPreferences.getInstance();
         final perfilStr = prefs.getString('usuario_perfil');
         if (perfilStr != null) {
@@ -295,6 +296,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           await prefs.setString('usuario_perfil', jsonEncode({'nombre': nuevoNombre}));
         }
 
+        // Notify parent shell to update global UI.
         if (widget.onNombreCambiado != null) {
           widget.onNombreCambiado!(nuevoNombre);
         }
@@ -314,6 +316,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  /// Uploads a new avatar to Supabase Storage and updates the profile record.
   Future<void> _cambiarFoto() async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -330,6 +333,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final imageBytes = await image.readAsBytes();
 
+      // Upsert: Replaces the previous file to save storage space.
       await supabase.storage.from('avatars').uploadBinary(
             rutaArchivo,
             imageBytes,
@@ -340,9 +344,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await supabase.from('perfiles').update({'avatar_url': imageUrl}).eq('id', userId);
 
+      // Invalidate specific image cache to force UI refresh.
       await CachedNetworkImage.evictFromCache(imageUrl);
 
-      // ¡ESCUDO AQUÍ!
       if (!mounted) return;
 
       setState(() {
@@ -350,6 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isUploading = false;
       });
 
+      // Sync cache.
       final prefs = await SharedPreferences.getInstance();
       final perfilStr = prefs.getString('usuario_perfil');
       if (perfilStr != null) {
@@ -360,6 +365,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await prefs.setString('usuario_perfil', jsonEncode({'avatar_url': imageUrl}));
       }
 
+      // Notify parent shell.
       if (widget.onAvatarCambiado != null) {
         widget.onAvatarCambiado!(imageUrl);
       }
@@ -379,7 +385,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
- Future<void> _cerrarSesion(BuildContext context) async {
+  /// Terminates the user session and performs a hard reset of local storage.
+  Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -400,10 +407,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmar == true) {
+      // Purge sensitive and user-specific data from SharedPreferences.
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('usuario_perfil'); 
-      await prefs.remove('reportes_cache'); // <--- ¡AGREGA ESTO!
-      await prefs.remove('reporte_borrador'); // <--- Y ESTO TAMBIÉN
+      await prefs.remove('reportes_cache'); 
+      await prefs.remove('reporte_borrador'); 
 
       try {
         await Supabase.instance.client.auth.signOut();
@@ -412,6 +420,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       if (context.mounted) {
+        // Unmount the entire application tree and route back to Login.
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -519,9 +528,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            // ==========================================
-            // ¡NUEVO! MOSTRAR CARRERA SOLO A ESTUDIANTES
-            // ==========================================
             if (_esEstudiante) ...[
               const SizedBox(height: 20),
               TextField(
@@ -532,7 +538,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   prefixIcon: const Icon(Icons.school, color: Colors.grey),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.edit, color: Color(0xFF800000)),
-                    onPressed: _cambiarCarrera, // Llama a nuestro nuevo método
+                    onPressed: _cambiarCarrera, 
                     tooltip: "Cambiar carrera",
                   ),
                   border: const OutlineInputBorder(),

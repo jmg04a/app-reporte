@@ -7,8 +7,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+/// Dual-purpose form interface for report creation and modification.
+///
+/// Implements draft auto-saving via [SharedPreferences] for creation mode, 
+/// and state hydration for modification mode when passed a [reporteExistente].
+/// Handles image picking, payload construction, and binary uploads to Supabase Storage.
 class CreateReportScreen extends StatefulWidget {
-  // ¡NUEVO! Recibe un reporte si vamos a editar
+  /// The existing report payload. If provided, the UI enters "Edit Mode".
+  /// If null, the UI defaults to "Create Mode".
   final Map<String, dynamic>? reporteExistente;
 
   const CreateReportScreen({super.key, this.reporteExistente});
@@ -21,7 +27,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
 
+  /// Prevents double-submissions during network requests.
   bool _isSubmitting = false; 
+  
+  /// Blocks the UI rendering until required catalog dictionaries are loaded.
   bool _isLoadingData = true; 
 
   List<Map<String, dynamic>> _categorias = [];
@@ -36,13 +45,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   XFile? _imagenSeleccionada;
   final ImagePicker _picker = ImagePicker();
 
+  /// UniqueKey to force rebuilding the Autocomplete widget when resetting state.
   Key _autocompleteKey = UniqueKey();
 
-  // Variables para controlar la imagen vieja en modo edición
+  /// State flags for image modification during Edit Mode.
   String? _imagenViejaUrl;
   bool _eliminoImagenVieja = false;
 
-  // Getter para saber en qué modo estamos
+  /// Computed property to determine current execution mode.
   bool get _esEdicion => widget.reporteExistente != null;
 
   @override
@@ -62,6 +72,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     super.dispose();
   }
 
+  /// Bootstraps the form by loading required catalog dictionaries (Categories and Locations).
+  ///
+  /// Implements Optimistic UI by loading stale cache first, then asynchronously 
+  /// querying Supabase. Finally, hydrates the form based on the current mode (Edit vs Create).
   Future<void> _cargarDatosIniciales() async {
     final prefs = await SharedPreferences.getInstance();
     final catsCache = prefs.getString('categorias_cache');
@@ -76,6 +90,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     try {
       final supabase = Supabase.instance.client;
       
+      // Fetch both dictionaries concurrently to reduce network waterfall delay.
       final respuestas = await Future.wait([
         supabase.from('cat_categorias').select('id, nombre, icono, color').order('nombre'),
         supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre')
@@ -104,6 +119,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  /// Processes raw location data into a flattened, searchable format.
+  /// 
+  /// Appends the parent building name to classrooms for better Autocomplete UX 
+  /// (e.g., "Aula 3 (Sistemas)").
   void _procesarYMostrarCatalogos(List<dynamic> categoriasData, List<dynamic> lugaresData) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
@@ -138,6 +157,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  /// Hydrates the form controllers and state variables using the passed report payload.
   void _prellenarDatosEdicion() {
     final rep = widget.reporteExistente!;
     setState(() {
@@ -150,6 +170,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _cargarUbicacionEdicion(rep['id']);
   }
 
+  /// Resolves the specific location entity for the report being edited.
   Future<void> _cargarUbicacionEdicion(int reporteId) async {
     try {
       final data = await Supabase.instance.client
@@ -174,6 +195,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  /// Restores the unsaved draft from device storage (Creation Mode only).
   Future<void> _cargarBorrador() async {
     final prefs = await SharedPreferences.getInstance();
     final borradorStr = prefs.getString('reporte_borrador');
@@ -192,8 +214,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _descripcionController.addListener(_guardarBorrador);
   }
 
+  /// Silently serializes current form state to SharedPreferences.
   Future<void> _guardarBorrador() async {
-    if (_esEdicion) return; 
+    if (_esEdicion) return; // Prevent overwriting drafts while editing an existing report.
     final prefs = await SharedPreferences.getInstance();
     final borrador = {
       'titulo': _tituloController.text,
@@ -204,7 +227,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     await prefs.setString('reporte_borrador', jsonEncode(borrador));
   }
 
-Future<void> _limpiarBorrador() async {
+  /// Prompts user confirmation before wiping form state and local storage.
+  Future<void> _limpiarBorrador() async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -233,9 +257,6 @@ Future<void> _limpiarBorrador() async {
     );
 
     if (confirmar == true) {
-      // ==========================================
-      // ¡ESCUDO 1! Protege al Navigator.pop
-      // ==========================================
       if (!mounted) return;
 
       if (_esEdicion) {
@@ -246,9 +267,6 @@ Future<void> _limpiarBorrador() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('reporte_borrador');
 
-      // ==========================================
-      // ¡ESCUDO 2! Protege al setState
-      // ==========================================
       if (!mounted) return;
 
       setState(() {
@@ -263,6 +281,7 @@ Future<void> _limpiarBorrador() async {
       });
     }
   }
+
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -340,7 +359,12 @@ Future<void> _limpiarBorrador() async {
     }
   }
 
+  /// Core submission handler.
+  ///
+  /// Orchestrates data validation, optional binary image upload to Supabase Storage, 
+  /// and branches logic to perform either an SQL INSERT (Creation) or UPDATE (Edition).
   Future<void> _enviarReporte() async {
+    // 1. Strict Form Validation
     if (_tituloController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa un título.", esError: true);
       return;
@@ -374,6 +398,7 @@ Future<void> _limpiarBorrador() async {
 
       String? evidenciaUrlFinal = _eliminoImagenVieja ? null : _imagenViejaUrl;
 
+      // 2. Binary Upload (If a new image is attached)
       if (_imagenSeleccionada != null) {
         final extension = _imagenSeleccionada!.name.split('.').last;
         final nombreArchivo = '${DateTime.now().millisecondsSinceEpoch}.$extension';
@@ -388,8 +413,8 @@ Future<void> _limpiarBorrador() async {
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
 
+      // 3. Database Mutation
       if (_esEdicion) {
-        // ACTUALIZAR REPORTE EXISTENTE
         final reporteId = widget.reporteExistente!['id'];
 
         await supabase.from('reportes').update({
@@ -406,7 +431,6 @@ Future<void> _limpiarBorrador() async {
         _mostrarMensaje("¡Reporte actualizado con éxito!");
 
       } else {
-        // CREAR REPORTE NUEVO
         final reporteInsertado = await supabase.from('reportes').insert({
           'titulo': _tituloController.text.trim(),
           'descripcion': _descripcionController.text.trim(),
@@ -423,15 +447,13 @@ Future<void> _limpiarBorrador() async {
           'lugar_id': _selectedLugarId,
         });
 
+        // Clear local storage draft upon successful database insert.
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('reporte_borrador');
 
         _mostrarMensaje("¡Reporte enviado con éxito!");
       }
 
-      // ==========================================
-      // ¡ESCUDO DEFINITIVO PARA EL POP!
-      // ==========================================
       if (!mounted) return;
       Navigator.pop(context);
 
@@ -441,6 +463,7 @@ Future<void> _limpiarBorrador() async {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoadingData) {
@@ -622,7 +645,6 @@ Future<void> _limpiarBorrador() async {
                 width: double.infinity,
                 constraints: const BoxConstraints(maxHeight: 400),
                 decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey[400]!), borderRadius: BorderRadius.circular(8)),
-                // LÓGICA PARA MOSTRAR IMAGEN VIEJA VS NUEVA
                 child: _imagenSeleccionada != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
@@ -695,7 +717,7 @@ Future<void> _limpiarBorrador() async {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: _limpiarBorrador,
-                    child: const Icon(Icons.close), // Bote de basura o Cruz
+                    child: const Icon(Icons.close), 
                   ),
                 ],
               ),

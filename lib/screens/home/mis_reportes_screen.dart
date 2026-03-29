@@ -6,6 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_screen.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
+/// A dedicated feed displaying only the reports authored by the active user.
+///
+/// Inherits the visual presentation ([TarjetaReporteOptimizada]) and 
+/// pagination logic from [HomeScreen], but enforces a strict database 
+/// filter against the current user's UUID.
 class MisReportesScreen extends StatefulWidget {
   const MisReportesScreen({super.key});
 
@@ -17,7 +22,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
   List<Map<String, dynamic>> _misReportes = [];
   bool _isLoading = true;
 
-  // Lógica de Paginación
+  /// Pagination configuration parameters.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
@@ -37,6 +42,9 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     super.dispose();
   }
 
+  /// Smoothly animates the list back to the top offset.
+  /// 
+  /// Bound to hardware keyboard shortcuts (ArrowUp / Home) via [CallbackShortcuts].
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -47,6 +55,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     }
   }
 
+  /// Fetches the initial payload of the user's personal reports.
   Future<void> _cargarMisReportes() async {
     setState(() => _isLoading = true);
     _rangoInicio = 0;
@@ -56,6 +65,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
       final supabase = Supabase.instance.client;
       final miUserId = supabase.auth.currentUser!.id;
 
+      // Notice the specific `.eq('usuario_id', miUserId)` filter ensuring 
+      // strict data isolation for the current session.
       final response = await supabase.from('reportes').select('''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
         cat_categorias (id, nombre, icono, color),
@@ -71,6 +82,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
         setState(() {
           _misReportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
+          // Halt pagination if the response size is smaller than the requested limit.
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
       }
@@ -80,6 +92,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     }
   }
 
+  /// Fetches the subsequent payload of user reports (Pagination).
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
 
@@ -119,6 +132,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Hardware evaluation to apply correct OS-level modifier keys.
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
     return CallbackShortcuts(
@@ -152,11 +166,12 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController, 
-                      cacheExtent: 2500, // <--- ¡SIN PARPADEOS!
+                      cacheExtent: 2500, // Preemptively renders off-screen items to prevent flickering.
                       padding: const EdgeInsets.all(12),
-                      itemCount: _misReportes.length + 1, // +1 para el botón
+                      itemCount: _misReportes.length + 1, 
                       itemBuilder: (context, index) {
                         
+                        // Render pagination trigger at the end of the list.
                         if (index == _misReportes.length) {
                           if (!_hayMasDatos) return const SizedBox.shrink();
                           
@@ -179,6 +194,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                         return TarjetaReporteOptimizada(
                           reporte: reporte,
                           onTap: () async {
+                            // Await the modal pop to automatically refresh the feed 
+                            // in case the user edited or deleted the report inside.
                             await Navigator.push(
                               context,
                               MaterialPageRoute(
