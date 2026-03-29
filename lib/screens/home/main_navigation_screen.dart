@@ -102,10 +102,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // ¡SE ELIMINÓ LA FUNCIÓN _construirPantalla()!
 
   @override
+@override
   Widget build(BuildContext context) {
     // Lógica inteligente: Si el índice de la barra es 3 (Perfil), mostramos el índice 1 del Stack.
     // De lo contrario, mostramos el índice 0 del Stack (Home).
     int stackIndex = _indiceActual == 3 ? 1 : 0;
+    
+    // ¡NUEVO! Detectamos si es Mac para los atajos
+    final bool isMac = !kIsWeb && Platform.isMacOS; 
 
     return PopScope(
       canPop: false,
@@ -113,76 +117,93 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         if (didPop) return;
         await _salirDeLaApp();
       },
-      child: Scaffold(
-        // =========================================================
-        // AQUÍ ESTÁ LA MAGIA: INDEXEDSTACK PARA PRESERVAR EL ESTADO
-        // =========================================================
-        body: IndexedStack(
-          index: stackIndex,
-          children: [
-            // Índice 0 del Stack: HomeScreen (Se mantiene vivo siempre)
-            HomeScreen(key: _homeKey),
-            
-            // Índice 1 del Stack: ProfileScreen (Se mantiene vivo siempre)
-            ProfileScreen(
-              nombre: _nombreUsuario,
-              rol: _rolUsuario,
-              avatarUrl: _avatarUrl,
-              onNombreCambiado: (nuevoNombre) {
-                setState(() => _nombreUsuario = nuevoNombre);
-              },
-              onAvatarCambiado: (nuevaUrl) {
-                setState(() => _avatarUrl = nuevaUrl);
-              },
-            ),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _indiceActual,
-          onDestinationSelected: (int index) async {
-            if (index == 1) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const FilterScreen()),
-              );
-            } else if (index == 2) {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CreateReportScreen()),
-              );
-              _homeKey.currentState?.cargarReportes();
-              
-              setState(() => _indiceActual = 0);
-              globalTabIndex.value = 0; 
-            } else {
-              setState(() => _indiceActual = index);
-              globalTabIndex.value = index; 
-            }
+      // =========================================================
+      // ¡NUEVO! ENVOLVEMOS EL SCAFFOLD PARA ATRAPAR EL TECLADO
+      // =========================================================
+      child: CallbackShortcuts(
+        bindings: {
+          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): () {
+            // Solo scrolleamos si estamos en la pestaña de Inicio
+            if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
           },
-          backgroundColor: Colors.white,
-          indicatorColor: const Color(0xFF800000).withValues(alpha: 0.2),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home, color: Color(0xFF800000)),
-              label: 'Inicio',
+          const SingleActivator(LogicalKeyboardKey.home): () {
+            if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            // =========================================================
+            // AQUÍ ESTÁ LA MAGIA: INDEXEDSTACK PARA PRESERVAR EL ESTADO
+            // =========================================================
+            body: IndexedStack(
+              index: stackIndex,
+              children: [
+                // Índice 0 del Stack: HomeScreen (Se mantiene vivo siempre)
+                HomeScreen(key: _homeKey),
+                
+                // Índice 1 del Stack: ProfileScreen (Se mantiene vivo siempre)
+                ProfileScreen(
+                  nombre: _nombreUsuario,
+                  rol: _rolUsuario,
+                  avatarUrl: _avatarUrl,
+                  onNombreCambiado: (nuevoNombre) {
+                    setState(() => _nombreUsuario = nuevoNombre);
+                  },
+                  onAvatarCambiado: (nuevaUrl) {
+                    setState(() => _avatarUrl = nuevaUrl);
+                  },
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search, color: Color(0xFF800000)),
-              label: 'Buscar',
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _indiceActual,
+              onDestinationSelected: (int index) async {
+                if (index == 1) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const FilterScreen()),
+                  );
+                } else if (index == 2) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CreateReportScreen()),
+                  );
+                  _homeKey.currentState?.cargarReportes();
+                  
+                  setState(() => _indiceActual = 0);
+                  globalTabIndex.value = 0; 
+                } else {
+                  setState(() => _indiceActual = index);
+                  globalTabIndex.value = index; 
+                }
+              },
+              backgroundColor: Colors.white,
+              indicatorColor: const Color(0xFF800000).withValues(alpha: 0.2),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home, color: Color(0xFF800000)),
+                  label: 'Inicio',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.search_outlined),
+                  selectedIcon: Icon(Icons.search, color: Color(0xFF800000)),
+                  label: 'Buscar',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.add),
+                  selectedIcon: Icon(Icons.add_circle, color: Color(0xFF800000)),
+                  label: 'Reportar',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person, color: Color(0xFF800000)),
+                  label: 'Perfil',
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.add),
-              selectedIcon: Icon(Icons.add_circle, color: Color(0xFF800000)),
-              label: 'Reportar',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person, color: Color(0xFF800000)),
-              label: 'Perfil',
-            ),
-          ],
+          ),
         ),
       ),
     );

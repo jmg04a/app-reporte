@@ -1,17 +1,14 @@
-import 'dart:io';
 import 'dart:convert'; 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
-import 'package:flutter_cache_manager/flutter_cache_manager.dart'; // <--- ¡NUEVO MOTOR DE CACHÉ!
+import 'package:flutter_cache_manager/flutter_cache_manager.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
 
 // =====================================================================
-// ¡NUEVO! GESTOR DE CACHÉ INTELIGENTE (Toda la app usará esto)
+// GESTOR DE CACHÉ INTELIGENTE (Toda la app usará esto)
 // =====================================================================
 class GestorCacheReportes {
   static const key = 'reportesCacheKey';
@@ -57,7 +54,8 @@ class HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _scrollToTop() {
+  // ¡FUNCIÓN PÚBLICA! El MainNavigationScreen la llama
+  void scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0.0, 
@@ -144,75 +142,65 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isMac = !kIsWeb && Platform.isMacOS;
-
-    return CallbackShortcuts(
-      bindings: {
-        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
-        const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          appBar: AppBar(
-            title: GestureDetector(
-              onTap: _scrollToTop,
-              child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            backgroundColor: const Color(0xFF800000), 
-            foregroundColor: Colors.white,
-          ),
-          body: RefreshIndicator(
-            onRefresh: cargarReportes,
-            color: const Color(0xFF800000),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator()) 
-                : _reportes.isEmpty
-                    ? ListView( 
-                        children: const [
-                          SizedBox(height: 150),
-                          Icon(Icons.inbox, size: 80, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
-                        ],
-                      )
-                    : ListView.builder(
-                        controller: _scrollController, 
-                        cacheExtent: 2500, // <--- ¡EVITA EL PARPADEO AL HACER SCROLL!
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _reportes.length + 1, 
-                        itemBuilder: (context, index) {
-                          if (index == _reportes.length) {
-                            if (!_hayMasDatos) return const SizedBox.shrink();
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 20),
-                              child: _cargandoMas
-                                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                                : Center(
-                                    child: OutlinedButton.icon(
-                                      onPressed: _cargarMasReportes,
-                                      icon: const Icon(Icons.add, color: Color(0xFF800000)),
-                                      label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
-                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
-                                    ),
-                                  ),
-                            );
-                          }
-
-                          return TarjetaReporteOptimizada(
-                            reporte: _reportes[index],
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
-                              );
-                              cargarReportes(); 
-                            },
-                          );
-                        },
-                      ),
-          ),
+    // Retornamos el Scaffold limpio y sin atajos propios
+    return Scaffold(
+      appBar: AppBar(
+        title: GestureDetector(
+          onTap: scrollToTop,
+          child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
         ),
+        backgroundColor: const Color(0xFF800000), 
+        foregroundColor: Colors.white,
+      ),
+      body: RefreshIndicator(
+        onRefresh: cargarReportes,
+        color: const Color(0xFF800000),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator()) 
+            : _reportes.isEmpty
+                ? ListView( 
+                    children: const [
+                      SizedBox(height: 150),
+                      Icon(Icons.inbox, size: 80, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
+                    ],
+                  )
+                : ListView.builder(
+                    controller: _scrollController, 
+                    cacheExtent: 2500, // <--- ¡EVITA EL PARPADEO AL HACER SCROLL!
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _reportes.length + 1, 
+                    itemBuilder: (context, index) {
+                      if (index == _reportes.length) {
+                        if (!_hayMasDatos) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: _cargandoMas
+                            ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                            : Center(
+                                child: OutlinedButton.icon(
+                                  onPressed: _cargarMasReportes,
+                                  icon: const Icon(Icons.add, color: Color(0xFF800000)),
+                                  label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
+                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                ),
+                              ),
+                        );
+                      }
+
+                      return TarjetaReporteOptimizada(
+                        reporte: _reportes[index],
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+                          );
+                          cargarReportes(); 
+                        },
+                      );
+                    },
+                  ),
       ),
     );
   }
@@ -364,7 +352,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
               imageUrl != null
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
-                      cacheManager: GestorCacheReportes.instance, // <--- ¡AQUÍ ESTÁ LA MAGIA DEL ALMACENAMIENTO!
+                      cacheManager: GestorCacheReportes.instance, 
                       memCacheWidth: 150, 
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,

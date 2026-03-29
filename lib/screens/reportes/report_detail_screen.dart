@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'create_report_screen.dart'; // <--- ¡NUEVA IMPORTACIÓN!
 
 class ReportDetailScreen extends StatefulWidget {
   final int reporteId;
@@ -106,7 +107,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           .update({'estado': nuevoEstado})
           .eq('id', widget.reporteId);
 
-      // ¡NUEVO! EL ESCUDO PROTECTOR
       if (!mounted) return;
 
       setState(() {
@@ -210,7 +210,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // --- HELPERS VISUALES ---
   Color _getColorFromHex(String? hexColor) {
     if (hexColor == null || hexColor.isEmpty) return Colors.grey;
     return Color(int.parse('FF${hexColor.replaceAll('#', '')}', radix: 16));
@@ -225,9 +224,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  // ============================================================
-  // ¡NUEVO! FUNCIÓN PARA FORMATEAR LA FECHA DE LA BASE DE DATOS
-  // ============================================================
   String _formatearFecha(String? fechaIso) {
     if (fechaIso == null) return 'Fecha desconocida';
     try {
@@ -259,11 +255,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final categoria = reporte['cat_categorias'];
     final imageUrl = reporte['evidencia_url'];
     
-    // EXTRACCIÓN SEGURA DE DATOS DEL CREADOR Y FECHA
     final perfilCreador = reporte['perfiles']; 
     final nombreCreador = perfilCreador?['nombre'] ?? 'Usuario Desconocido';
     final avatarUrl = perfilCreador?['avatar_url'];
-    final fechaFormateada = _formatearFecha(reporte['created_at']); // <--- APLICAMOS EL FORMATO AQUÍ
+    final fechaFormateada = _formatearFecha(reporte['created_at']); 
     
     String? numeroControl;
     final dataEstudiante = perfilCreador?['estudiantes'];
@@ -280,12 +275,30 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         title: const Text("Detalle del Reporte"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
+        actions: [
+          // ==========================================
+          // ¡NUEVO! BOTÓN DE EDITAR
+          // ==========================================
+          if (_isCreator && _estadoActual.toLowerCase() == 'pendiente')
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: "Editar reporte",
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CreateReportScreen(reporteExistente: _reporteCompleto),
+                  ),
+                );
+                _cargarDetalles(); // Recargamos la info por si cambió
+              },
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. IMAGEN DEL REPORTE
             if (imageUrl != null)
               Container(
                 width: double.infinity,
@@ -316,8 +329,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  
-                  // 2. CONTROLES DE ADMINISTRADOR O VISTA NORMAL DE ESTADO
                   if (_isAdmin) ...[
                     const Text("Gestión de Administrador", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
                     const SizedBox(height: 5),
@@ -354,7 +365,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   
                   const SizedBox(height: 15),
 
-                  // 3. DATOS PRINCIPALES
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +379,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 4. TARJETA DE QUIÉN LO REPORTÓ Y LA FECHA
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -396,9 +405,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 Text("No. Control: $numeroControl", style: const TextStyle(fontSize: 14, color: Colors.blueGrey)),
                               
                               const SizedBox(height: 4),
-                              // ==========================================
-                              // ¡AQUÍ ESTÁ LA FECHA AGREGADA!
-                              // ==========================================
                               Row(
                                 children: [
                                   const Icon(Icons.access_time, size: 14, color: Colors.grey),
@@ -414,7 +420,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 5. UBICACIÓN Y DESCRIPCIÓN
                   const Text("Ubicación", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 5),
                   Row(
@@ -437,7 +442,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   const Divider(),
                   const SizedBox(height: 10),
 
-                  // 6. SECCIÓN DE REACCIONES
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -477,7 +481,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ),
                   const SizedBox(height: 30),
 
-                  // 7. BOTÓN DE ELIMINAR REPORTE
                   if (_isAdmin || _isCreator) ...[
                     const Divider(),
                     const SizedBox(height: 10),

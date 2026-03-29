@@ -5,9 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class CreateReportScreen extends StatefulWidget {
-  const CreateReportScreen({super.key});
+  // ¡NUEVO! Recibe un reporte si vamos a editar
+  final Map<String, dynamic>? reporteExistente;
+
+  const CreateReportScreen({super.key, this.reporteExistente});
 
   @override
   State<CreateReportScreen> createState() => _CreateReportScreenState();
@@ -34,6 +38,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   Key _autocompleteKey = UniqueKey();
 
+  // Variables para controlar la imagen vieja en modo edición
+  String? _imagenViejaUrl;
+  bool _eliminoImagenVieja = false;
+
+  // Getter para saber en qué modo estamos
+  bool get _esEdicion => widget.reporteExistente != null;
+
   @override
   void initState() {
     super.initState();
@@ -42,8 +53,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   @override
   void dispose() {
-    _tituloController.removeListener(_guardarBorrador);
-    _descripcionController.removeListener(_guardarBorrador);
+    if (!_esEdicion) {
+      _tituloController.removeListener(_guardarBorrador);
+      _descripcionController.removeListener(_guardarBorrador);
+    }
     _tituloController.dispose();
     _descripcionController.dispose();
     super.dispose();
@@ -81,7 +94,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _mostrarMensaje("Error cargando catálogos: $e", esError: true);
       }
     } finally {
-      await _cargarBorrador();
+      if (_esEdicion) {
+        _prellenarDatosEdicion();
+      } else {
+        await _cargarBorrador();
+      }
+      
       if (mounted) setState(() => _isLoadingData = false);
     }
   }
@@ -120,6 +138,42 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  void _prellenarDatosEdicion() {
+    final rep = widget.reporteExistente!;
+    setState(() {
+      _tituloController.text = rep['titulo'] ?? '';
+      _descripcionController.text = rep['descripcion'] ?? '';
+      _selectedCategoriaId = rep['categoria_id'];
+      _imagenViejaUrl = rep['evidencia_url'];
+    });
+
+    _cargarUbicacionEdicion(rep['id']);
+  }
+
+  Future<void> _cargarUbicacionEdicion(int reporteId) async {
+    try {
+      final data = await Supabase.instance.client
+          .from('reporte_ubicaciones')
+          .select('lugar_id')
+          .eq('reporte_id', reporteId)
+          .maybeSingle();
+          
+      if (data != null && mounted) {
+        setState(() {
+          _selectedLugarId = data['lugar_id'];
+          final lugarEncontrado = _todosLosLugares.firstWhere(
+            (l) => l['id'] == _selectedLugarId, 
+            orElse: () => {'nombreBuscable': ''}
+          );
+          _lugarTextoActual = lugarEncontrado['nombreBuscable'];
+          _autocompleteKey = UniqueKey();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error cargando ubicación para editar: $e");
+    }
+  }
+
   Future<void> _cargarBorrador() async {
     final prefs = await SharedPreferences.getInstance();
     final borradorStr = prefs.getString('reporte_borrador');
@@ -139,6 +193,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   Future<void> _guardarBorrador() async {
+    if (_esEdicion) return; 
     final prefs = await SharedPreferences.getInstance();
     final borrador = {
       'titulo': _tituloController.text,
@@ -149,7 +204,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     await prefs.setString('reporte_borrador', jsonEncode(borrador));
   }
 
-  Future<void> _limpiarBorrador() async {
+Future<void> _limpiarBorrador() async {
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -157,10 +212,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           children: [
             Icon(Icons.delete_sweep, color: Colors.red),
             SizedBox(width: 10),
-            Text("Descartar reporte"),
+            Text("Descartar cambios"),
           ],
         ),
-        content: const Text("¿Estás seguro de que deseas borrar todo lo que has escrito?"),
+        content: Text(_esEdicion 
+          ? "¿Estás seguro de que deseas descartar los cambios? El reporte quedará como estaba."
+          : "¿Estás seguro de que deseas borrar todo lo que has escrito?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -176,8 +233,23 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
 
     if (confirmar == true) {
+      // ==========================================
+      // ¡ESCUDO 1! Protege al Navigator.pop
+      // ==========================================
+      if (!mounted) return;
+
+      if (_esEdicion) {
+        Navigator.pop(context); 
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('reporte_borrador');
+
+      // ==========================================
+      // ¡ESCUDO 2! Protege al setState
+      // ==========================================
+      if (!mounted) return;
 
       setState(() {
         _tituloController.clear();
@@ -191,7 +263,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       });
     }
   }
-
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -252,7 +323,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   Future<void> _procesarImagen(ImageSource origen) async {
     final XFile? image = await _picker.pickImage(source: origen, imageQuality: 70);
     if (image != null) {
-      setState(() => _imagenSeleccionada = image);
+      setState(() {
+        _imagenSeleccionada = image;
+        _eliminoImagenVieja = true; 
+      });
     }
   }
 
@@ -298,50 +372,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
 
-      final duplicados = await supabase
-          .from('reportes')
-          .select('id, titulo, estado, reporte_ubicaciones!inner(lugar_id)')
-          .eq('categoria_id', _selectedCategoriaId!)
-          .neq('estado', 'finalizado') 
-          .eq('reporte_ubicaciones.lugar_id', _selectedLugarId!);
+      String? evidenciaUrlFinal = _eliminoImagenVieja ? null : _imagenViejaUrl;
 
-      if (duplicados.isNotEmpty && mounted) {
-        setState(() => _isSubmitting = false);
-        final tituloDuplicado = duplicados[0]['titulo'];
-        
-        final continuar = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange),
-                SizedBox(width: 10),
-                Text("Posible duplicado"),
-              ],
-            ),
-            content: Text(
-                "Parece que alguien ya reportó un problema similar aquí:\n\n"
-                "'$tituloDuplicado'\n\n"
-                "¿Estás seguro de que quieres crear un reporte nuevo?"),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text("Cancelar", style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF800000), foregroundColor: Colors.white),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text("Sí, enviar"),
-              ),
-            ],
-          ),
-        );
-
-        if (continuar != true) return;
-        setState(() => _isSubmitting = true);
-      }
-
-      String? evidenciaUrlFinal;
       if (_imagenSeleccionada != null) {
         final extension = _imagenSeleccionada!.name.split('.').last;
         final nombreArchivo = '${DateTime.now().millisecondsSinceEpoch}.$extension';
@@ -356,42 +388,65 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
 
-      final reporteInsertado = await supabase.from('reportes').insert({
-        'titulo': _tituloController.text.trim(),
-        'descripcion': _descripcionController.text.trim(),
-        'categoria_id': _selectedCategoriaId,
-        'usuario_id': userId,
-        'estado': 'pendiente',
-        'evidencia_url': evidenciaUrlFinal,
-      }).select('id').single();
+      if (_esEdicion) {
+        // ACTUALIZAR REPORTE EXISTENTE
+        final reporteId = widget.reporteExistente!['id'];
 
-      final reporteId = reporteInsertado['id'];
+        await supabase.from('reportes').update({
+          'titulo': _tituloController.text.trim(),
+          'descripcion': _descripcionController.text.trim(),
+          'categoria_id': _selectedCategoriaId,
+          'evidencia_url': evidenciaUrlFinal,
+        }).eq('id', reporteId);
 
-      await supabase.from('reporte_ubicaciones').insert({
-        'reporte_id': reporteId,
-        'lugar_id': _selectedLugarId,
-      });
+        await supabase.from('reporte_ubicaciones').update({
+          'lugar_id': _selectedLugarId,
+        }).eq('reporte_id', reporteId);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('reporte_borrador');
+        _mostrarMensaje("¡Reporte actualizado con éxito!");
 
+      } else {
+        // CREAR REPORTE NUEVO
+        final reporteInsertado = await supabase.from('reportes').insert({
+          'titulo': _tituloController.text.trim(),
+          'descripcion': _descripcionController.text.trim(),
+          'categoria_id': _selectedCategoriaId,
+          'usuario_id': userId,
+          'estado': 'pendiente',
+          'evidencia_url': evidenciaUrlFinal,
+        }).select('id').single();
+
+        final reporteId = reporteInsertado['id'];
+
+        await supabase.from('reporte_ubicaciones').insert({
+          'reporte_id': reporteId,
+          'lugar_id': _selectedLugarId,
+        });
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('reporte_borrador');
+
+        _mostrarMensaje("¡Reporte enviado con éxito!");
+      }
+
+      // ==========================================
+      // ¡ESCUDO DEFINITIVO PARA EL POP!
+      // ==========================================
       if (!mounted) return;
-      _mostrarMensaje("¡Reporte enviado con éxito!");
       Navigator.pop(context);
 
     } catch (e) {
-      _mostrarMensaje("Error al enviar reporte: $e", esError: true);
+      _mostrarMensaje("Error al procesar reporte: $e", esError: true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoadingData) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text("Nuevo Reporte"),
+          title: Text(_esEdicion ? "Editar Reporte" : "Nuevo Reporte"),
           backgroundColor: const Color(0xFF800000),
         ),
         body: const Center(child: CircularProgressIndicator(color: Color(0xFF800000))),
@@ -411,17 +466,16 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Nuevo Reporte"),
+        title: Text(_esEdicion ? "Editar Reporte" : "Nuevo Reporte"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
-        // ¡Se eliminó el botón de la esquina superior derecha!
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text("¿Qué está fallando?", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(_esEdicion ? "Corregir detalles" : "¿Qué está fallando?", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
             
             TextField(
@@ -460,7 +514,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             
             Autocomplete<Map<String, dynamic>>(
               key: _autocompleteKey, 
-              initialValue: TextEditingValue(text: textLugarInicial), 
+              initialValue: TextEditingValue(text: _lugarTextoActual), 
               optionsBuilder: (TextEditingValue textEditingValue) {
                 if (textEditingValue.text.isEmpty) {
                   return const Iterable<Map<String, dynamic>>.empty();
@@ -568,6 +622,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                 width: double.infinity,
                 constraints: const BoxConstraints(maxHeight: 400),
                 decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey[400]!), borderRadius: BorderRadius.circular(8)),
+                // LÓGICA PARA MOSTRAR IMAGEN VIEJA VS NUEVA
                 child: _imagenSeleccionada != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
@@ -575,32 +630,42 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             ? Image.network(_imagenSeleccionada!.path, fit: BoxFit.contain)
                             : Image.file(File(_imagenSeleccionada!.path), fit: BoxFit.contain),
                       )
-                    : const SizedBox(
-                        height: 150,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.camera_alt_outlined, size: 40, color: Colors.grey),
-                            SizedBox(height: 8),
-                            Text("Toca para agregar una foto", style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      ),
+                    : (!_eliminoImagenVieja && _imagenViejaUrl != null)
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: _imagenViejaUrl!,
+                              fit: BoxFit.contain,
+                            ),
+                          )
+                        : const SizedBox(
+                            height: 150,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.camera_alt_outlined, size: 40, color: Colors.grey),
+                                SizedBox(height: 8),
+                                Text("Toca para agregar una foto", style: TextStyle(color: Colors.grey)),
+                              ],
+                            ),
+                          ),
               ),
             ),
 
-            if (_imagenSeleccionada != null)
+            if (_imagenSeleccionada != null || (!_eliminoImagenVieja && _imagenViejaUrl != null))
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  onPressed: () => setState(() => _imagenSeleccionada = null),
+                  onPressed: () => setState(() {
+                    _imagenSeleccionada = null;
+                    _eliminoImagenVieja = true;
+                  }),
                   icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                   label: const Text("Quitar foto", style: TextStyle(color: Colors.red)),
                 ),
               ),
             const SizedBox(height: 30),
 
-            // ¡NUEVA FILA DE BOTONES SIMÉTRICOS!
             if (_isSubmitting)
               const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
             else
@@ -614,8 +679,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      icon: const Icon(Icons.send),
-                      label: const Text("ENVIAR REPORTE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      icon: Icon(_esEdicion ? Icons.save : Icons.send),
+                      label: Text(_esEdicion ? "ACTUALIZAR REPORTE" : "ENVIAR REPORTE", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       onPressed: _enviarReporte,
                     ),
                   ),
@@ -630,7 +695,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: _limpiarBorrador,
-                    child: const Icon(Icons.delete_outline), // Bote de basura estilo filter_screen
+                    child: const Icon(Icons.close), // Bote de basura o Cruz
                   ),
                 ],
               ),
