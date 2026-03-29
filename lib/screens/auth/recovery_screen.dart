@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Manages the multi-step password recovery state machine.
+///
+/// Implements a 3-phase authentication flow:
+/// 1. OTP (One-Time Password) dispatch via email.
+/// 2. Token verification.
+/// 3. Secure credential update.
 class RecoveryScreen extends StatefulWidget {
-  // Recibimos el correo que escribió en el Login
+  /// Pre-fills the email input if routed directly from a failed login attempt.
   final String? initialEmail;
 
   const RecoveryScreen({super.key, this.initialEmail});
@@ -15,19 +21,23 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   final _emailController = TextEditingController();
   final _tokenController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController(); // ¡NUEVO CONTROLADOR!
+  final _confirmPasswordController = TextEditingController();
 
   static const String _dominio = "@correo.itlalaguna.edu.mx";
-  int _pasoActual = 1; // 1: Email, 2: Token, 3: Nueva Password
+  
+  /// Tracks the current active phase of the recovery flow.
+  /// Valid states: 1 (Email Input), 2 (Token Input), 3 (New Password Input).
+  int _pasoActual = 1; 
+  
   bool _isLoading = false;
   
-  // ¡NUEVA VARIABLE! Controla si las contraseñas se ocultan o se muestran
+  /// Toggles the visibility state of the password input fields.
   bool _obscurePassword = true; 
 
   @override
   void initState() {
     super.initState();
-    // Si mandaron un correo desde el Login, lo escribimos automáticamente
+    // UX Optimization: Auto-fill the email if inherited from previous screen.
     if (widget.initialEmail != null && widget.initialEmail!.isNotEmpty) {
       _emailController.text = widget.initialEmail!;
     }
@@ -38,10 +48,11 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     _emailController.dispose();
     _tokenController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose(); // Limpiamos la memoria
+    _confirmPasswordController.dispose(); 
     super.dispose();
   }
 
+  /// Displays transient UI feedback for validation and network responses.
   void _mostrarMensaje(String msg, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -52,12 +63,13 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     );
   }
 
+  /// Sanitizes input and appends the default institutional domain if omitted.
   String _obtenerEmailCompleto() {
     final input = _emailController.text.trim();
     return input.contains('@') ? input : input + _dominio;
   }
 
-  // PASO 1: Enviar el código al correo
+  /// Phase 1: Requests a 8-digit OTP token from Supabase Auth to be sent via email.
   Future<void> _enviarCodigo() async {
     if (_emailController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa tu usuario.", esError: true);
@@ -70,6 +82,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       await Supabase.instance.client.auth.resetPasswordForEmail(emailFinal);
       
       _mostrarMensaje("Código enviado. Revisa tu correo institucional.");
+      // Transition to Phase 2 upon successful token dispatch.
       setState(() => _pasoActual = 2);
     } on AuthException catch (e) {
       _mostrarMensaje(e.message, esError: true);
@@ -80,7 +93,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     }
   }
 
-  // PASO 2: Verificar el código
+  /// Phase 2: Validates the user-provided OTP token against Supabase Auth.
   Future<void> _verificarCodigo() async {
     if (_tokenController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa el código.", esError: true);
@@ -98,6 +111,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       );
 
       _mostrarMensaje("Código correcto. Ingresa tu nueva contraseña.");
+      // Transition to Phase 3 upon successful token validation.
       setState(() => _pasoActual = 3);
     } on AuthException catch (_) {
       _mostrarMensaje("Código inválido o expirado", esError: true);
@@ -108,9 +122,9 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     }
   }
 
-  // PASO 3: Guardar la nueva contraseña
+  /// Phase 3: Commits the new password payload to the authenticated user profile.
   Future<void> _actualizarPassword() async {
-    // ¡NUEVAS VALIDACIONES!
+    // Pre-flight local validations to prevent unnecessary network requests.
     if (_passwordController.text.length < 6) {
       _mostrarMensaje("La contraseña debe tener al menos 6 caracteres.", esError: true);
       return;
@@ -129,7 +143,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
       if (mounted) {
         _mostrarMensaje("¡Contraseña actualizada con éxito!");
-        Navigator.pop(context); // Regresamos al Login
+        // Successfully complete the flow and return to login.
+        Navigator.pop(context); 
       }
     } on AuthException catch (e) {
       _mostrarMensaje(e.message, esError: true);
@@ -153,7 +168,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // BARRA DE PROGRESO VISUAL
+            // Visual progress indicator (Stepper)
             Row(
               children: [
                 _buildStep(1, "Correo"),
@@ -166,7 +181,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             const SizedBox(height: 40),
 
             // ==========================================
-            // PASO 1: INGRESAR CORREO
+            // UI PHASE 1: EMAIL INPUT
             // ==========================================
             if (_pasoActual == 1) ...[
               const Icon(Icons.mark_email_read_outlined, size: 60, color: Color(0xFF800000)),
@@ -204,13 +219,13 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ],
 
             // ==========================================
-            // PASO 2: INGRESAR TOKEN (CÓDIGO)
+            // UI PHASE 2: TOKEN INPUT
             // ==========================================
             if (_pasoActual == 2) ...[
               const Icon(Icons.password, size: 60, color: Color(0xFF800000)),
               const SizedBox(height: 20),
               const Text(
-                "Revisa tu bandeja de entrada e ingresa el código de 6 dígitos que te enviamos.",
+                "Revisa tu bandeja de entrada e ingresa el código de 8 dígitos que te enviamos.",
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
@@ -219,7 +234,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                 controller: _tokenController,
                 decoration: const InputDecoration(
                   labelText: "Código de Verificación",
-                  hintText: "Ej. 123456",
+                  hintText: "Ej. 12345678",
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.dialpad),
                 ),
@@ -244,7 +259,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ],
 
             // ==========================================
-            // PASO 3: NUEVA CONTRASEÑA (ACTUALIZADO)
+            // UI PHASE 3: NEW PASSWORD INPUT
             // ==========================================
             if (_pasoActual == 3) ...[
               const Icon(Icons.lock_reset, size: 60, color: Colors.green),
@@ -256,14 +271,12 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               ),
               const SizedBox(height: 30),
               
-              // CAMPO 1: Nueva Contraseña
               TextField(
                 controller: _passwordController,
                 decoration: InputDecoration(
                   labelText: "Nueva Contraseña",
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.lock_outline),
-                  // Ojo para mostrar/ocultar
                   suffixIcon: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                     onPressed: () {
@@ -273,18 +286,16 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                     },
                   ),
                 ),
-                obscureText: _obscurePassword, // Se enlaza a la variable de estado
+                obscureText: _obscurePassword, 
               ),
               const SizedBox(height: 15),
 
-              // CAMPO 2: Confirmar Contraseña
               TextField(
                 controller: _confirmPasswordController,
                 decoration: InputDecoration(
                   labelText: "Confirmar Nueva Contraseña",
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.lock_reset),
-                  // Ojo para mostrar/ocultar (controla a ambos campos simultáneamente)
                   suffixIcon: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                     onPressed: () {
@@ -294,7 +305,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                     },
                   ),
                 ),
-                obscureText: _obscurePassword, // Se enlaza a la MISMA variable de estado
+                obscureText: _obscurePassword, 
               ),
 
               const SizedBox(height: 30),
@@ -305,7 +316,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                     : const Icon(Icons.save),
                 label: Text(_isLoading ? "GUARDANDO..." : "ACTUALIZAR CONTRASEÑA", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green, // Usamos verde para indicar finalización exitosa
+                  backgroundColor: Colors.green, 
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -318,7 +329,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     );
   }
 
-  // Widget auxiliar para las bolitas de paso
+  /// Builds a visual node for the horizontal step indicator.
   Widget _buildStep(int paso, String label) {
     bool activo = _pasoActual >= paso;
     return Column(

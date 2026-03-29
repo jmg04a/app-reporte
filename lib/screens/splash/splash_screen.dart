@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Asegúrate de que estas rutas coincidan con tus carpetas
 import '../auth/login_screen.dart'; 
-// 1. CAMBIO AQUÍ: Importamos el nuevo MainNavigationScreen en lugar del HomeScreen
 import '../home/main_navigation_screen.dart'; 
 
+/// Initial application entry point for session resolution.
+///
+/// Displays a branding screen while verifying the presence of an active 
+/// Supabase authentication token to determine the initial routing flow.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -20,23 +21,26 @@ class _SplashScreenState extends State<SplashScreen> {
     _verificarSesion();
   }
 
+  /// Evaluates the current authentication state.
+  ///
+  /// Introduces an artificial delay to prevent UI flickering on fast devices, 
+  /// ensuring the branding is visible. Routes to [MainNavigationScreen] if 
+  /// a valid session exists, otherwise redirects to [LoginScreen].
   Future<void> _verificarSesion() async {
-    // Le damos medio segundo de pausa para que la animación de carga se alcance a ver
+    // Artificial delay for UX/branding purposes.
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
-    // Le preguntamos a Supabase si alguien dejó la sesión abierta
+    // Retrieve active session from the local Supabase GoTrue client.
     final session = Supabase.instance.client.auth.currentSession;
 
     if (session != null) {
-      // 2. CAMBIO AQUÍ: Lo mandamos al MainNavigationScreen para que aparezcan los botones de abajo
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
       );
     } else {
-      // Si no hay sesión (o la cerró), lo mandamos a iniciar sesión
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),

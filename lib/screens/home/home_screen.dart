@@ -6,24 +6,29 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
-
-// =====================================================================
-// GESTOR DE CACHÉ INTELIGENTE (Toda la app usará esto)
-// =====================================================================
+/// Singleton configuration for global image caching.
+///
+/// Implements `flutter_cache_manager` with a custom SQLite repository to 
+/// prevent storage leaks. Images older than 7 days or exceeding the 50 
+/// object limit are automatically purged from the device's file system.
 class GestorCacheReportes {
   static const key = 'reportesCacheKey';
   
   static CacheManager instance = CacheManager(
     Config(
       key,
-      stalePeriod: const Duration(days: 7), // Borra fotos de más de 7 días sin verse
-      maxNrOfCacheObjects: 50, // Solo mantiene 50 fotos en almacenamiento
+      stalePeriod: const Duration(days: 7), 
+      maxNrOfCacheObjects: 50, 
       repo: JsonCacheInfoRepository(databaseName: key),
       fileService: HttpFileService(),
     ),
   );
 }
 
+/// Main feed displaying the global list of reports.
+///
+/// Implements pagination (infinite scrolling) and local caching to optimize
+/// network bandwidth and memory footprint.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -35,6 +40,7 @@ class HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _reportes = [];
   bool _isLoading = true;
 
+  /// Pagination configuration.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
@@ -54,7 +60,8 @@ class HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // ¡FUNCIÓN PÚBLICA! El MainNavigationScreen la llama
+  /// Exposed method to allow parent wrappers (like MainNavigationScreen) 
+  /// to trigger a scroll-to-top animation via global keyboard shortcuts.
   void scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -65,6 +72,11 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Fetches the initial payload of reports from Supabase.
+  ///
+  /// Implements an optimistic UI rendering approach by instantly loading 
+  /// stale data from `SharedPreferences` while the fresh data is fetched 
+  /// asynchronously in the background.
   Future<void> cargarReportes() async {
     _rangoInicio = 0;
     _hayMasDatos = true;
@@ -72,6 +84,7 @@ class HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     final datosGuardados = prefs.getString('reportes_cache');
 
+    // Optimistic UI: Render cached data immediately if available.
     if (datosGuardados != null && _reportes.isEmpty) {
       if (mounted) {
         setState(() {
@@ -85,6 +98,9 @@ class HomeScreenState extends State<HomeScreen> {
 
     try {
       final supabase = Supabase.instance.client;
+      
+      // Performs a complex relational join (Inner Joins) to extract full context 
+      // without needing multiple sequential queries.
       final response = await supabase.from('reportes').select('''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
         cat_categorias (id, nombre, icono, color),
@@ -98,8 +114,10 @@ class HomeScreenState extends State<HomeScreen> {
         setState(() {
           _reportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
+          // Stop pagination if the returned payload is smaller than the requested limit.
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
+        // Override local cache with the fresh dataset.
         prefs.setString('reportes_cache', jsonEncode(response));
       }
     } catch (e) {
@@ -107,6 +125,7 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Fetches the subsequent payload of reports (Pagination).
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
 
@@ -142,7 +161,6 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Retornamos el Scaffold limpio y sin atajos propios
     return Scaffold(
       appBar: AppBar(
         title: GestureDetector(
@@ -168,7 +186,8 @@ class HomeScreenState extends State<HomeScreen> {
                   )
                 : ListView.builder(
                     controller: _scrollController, 
-                    cacheExtent: 2500, // <--- ¡EVITA EL PARPADEO AL HACER SCROLL!
+                    // High cacheExtent prevents widget recycling flickering on large image lists.
+                    cacheExtent: 2500, 
                     padding: const EdgeInsets.all(12),
                     itemCount: _reportes.length + 1, 
                     itemBuilder: (context, index) {
@@ -206,9 +225,11 @@ class HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// =====================================================================
-// TARJETA EXTRAÍDA E INDEPENDIENTE
-// =====================================================================
+/// Extracted presentation widget for individual reports.
+///
+/// Declared as an independent Stateless widget to enforce `const` rendering 
+/// where possible, reducing the build scope and freeing up the UI thread 
+/// from deep tree traversal.
 class TarjetaReporteOptimizada extends StatelessWidget {
   final Map<String, dynamic> reporte;
   final VoidCallback onTap;
@@ -219,6 +240,8 @@ class TarjetaReporteOptimizada extends StatelessWidget {
     required this.onTap,
   });
 
+  /// In-memory memoization map for parsed hex colors to avoid repetitive 
+  /// string parsing operations during deep scrolling.
   static final Map<String, Color> _colorCache = {};
 
   static Color _getColorFromHex(String? hexColor) {
@@ -353,7 +376,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
                       cacheManager: GestorCacheReportes.instance, 
-                      memCacheWidth: 150, 
+                      memCacheWidth: 150, // Critical for RAM usage prevention
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,
                       imageBuilder: (context, imageProvider) => Container(

@@ -6,7 +6,10 @@ import '../auth/recovery_screen.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
+/// Entry point for user authentication.
+/// 
+/// Handles credential validation via Supabase Auth and implements 
+/// a domain-completion UX strategy for the institutional email.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -15,15 +18,18 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // 1. CAMBIAMOS EL NOMBRE: Ya no es emailController, es usuarioController
   final _usuarioController = TextEditingController(); 
   final _passwordController = TextEditingController();
   
-  // 2. CONSTANTE DEL DOMINIO: Para no escribirla mal nunca
+  /// Institutional domain suffix appended automatically if the user omits it.
   static const String _dominio = "@correo.itlalaguna.edu.mx";
 
   bool _isLoading = false;
 
+  /// Displays transient UI feedback for authentication errors.
+  /// 
+  /// Guarded with [mounted] check to prevent exceptions if the widget 
+  /// is disposed before the SnackBar can be rendered.
   void _mostrarError(String mensaje) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -31,38 +37,40 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // LOGICA DE LOGIN
-Future<void> _iniciarSesion() async {
+  /// Orchestrates the sign-in flow.
+  /// 
+  /// 1. Sanitizes user input and handles domain completion.
+  /// 2. Authenticates via Supabase Auth.
+  /// 3. Prefetches user metadata into SharedPreferences for offline availability.
+  /// 4. Routes to the main application shell upon success.
+  Future<void> _iniciarSesion() async {
     setState(() => _isLoading = true);
     try {
-
-      // 1. Obtienes lo que escribió el usuario limpio
       final inputUsuario = _usuarioController.text.trim();
 
-      // 2. Decides inteligentemente
+      // UX Optimization: Automatically append the institutional domain if the 
+      // user only inputs their username/control number.
       final emailCompleto = inputUsuario.contains('@') 
       ? inputUsuario 
       : inputUsuario + _dominio; 
 
-      // 3. Intentamos iniciar sesión
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: emailCompleto,
         password: _passwordController.text,
       );
 
-      // 4. ¡NUEVO! Guardamos el caché ANTES de revisar si la pantalla sigue viva
-      // Así aseguramos que el perfil se guarde pase lo que pase.
+      // Prefetch user profile data before routing to prevent layout shifts 
+      // or "loading" states on the subsequent screens.
       await _guardarPerfilEnCache(response.user!.id);
 
-      // 5. AHORA SÍ: Revisamos si el usuario no cerró la app mientras descargábamos
-      if (mounted) { 
-        Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(builder: (context) => const MainNavigationScreen())
-        );
-      }
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context, 
+        MaterialPageRoute(builder: (context) => const MainNavigationScreen())
+      );
       
     } on AuthException catch (e) {
+      // Map Supabase generic errors to user-friendly Spanish messages.
       if (e.message.contains("Email not confirmed")) {
         _mostrarError("¡Aún no confirmas tu correo! Revisa tu bandeja.");
       } else if (e.message.contains("Invalid login credentials")) {
@@ -77,22 +85,33 @@ Future<void> _iniciarSesion() async {
     }
   }
 
+  /// Downloads essential user metadata from the 'perfiles' table and persists 
+  /// it locally using SharedPreferences.
   Future<void> _guardarPerfilEnCache(String userId) async {
-  try {
-    final supabase = Supabase.instance.client;
-    
-    final perfil = await supabase
-        .from('perfiles')
-        .select('nombre, avatar_url, estudiantes(numero_control)')
-        .eq('id', userId)
-        .single();
+    try {
+      final supabase = Supabase.instance.client;
+      
+      // Perform a join with 'estudiantes' to fetch the control number if applicable.
+      final perfil = await supabase
+          .from('perfiles')
+          .select('nombre, avatar_url, estudiantes(numero_control)')
+          .eq('id', userId)
+          .single();
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('usuario_perfil', jsonEncode(perfil));
-  } catch (e) {
-    debugPrint("Error guardando caché del perfil: $e");
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('usuario_perfil', jsonEncode(perfil));
+    } catch (e) {
+      // Silent fail: If cache fails, the ProfileScreen is built to fetch fresh data anyway.
+      debugPrint("Error guardando caché del perfil: $e");
+    }
   }
-}
+
+  @override
+  void dispose() {
+    _usuarioController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,30 +125,26 @@ Future<void> _iniciarSesion() async {
               const Icon(Icons.school, size: 80, color: Color(0xFF800000)),
               const SizedBox(height: 20),
               const Text(
-                "PlaceHolderTitle",
+                "Reportes ITL",
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 40),
 
-              // CAMPO USUARIO (MEJORADO)
               TextField(
                 controller: _usuarioController,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: "Correo Institucional",
-                  hintText: "ej. alu.20310092", // Ejemplo corto
-                  
+                  hintText: "ej. alu.20310092", 
                   helperText: "Se agregará automáticamente @correo.itlalaguna.edu.mx",
                   helperStyle: TextStyle(color: Colors.black54),
-                  
-                  prefixIcon: const Icon(Icons.person_outline),
-                  border: const OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.text, // Ya no es emailAddress, es texto normal
+                keyboardType: TextInputType.text, 
               ),
               
               const SizedBox(height: 20),
 
-              // CAMPO PASSWORD
               TextField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -139,16 +154,14 @@ Future<void> _iniciarSesion() async {
                 ),
                 obscureText: true,
               ),
-              const SizedBox(height: 30),
-
+              
               const SizedBox(height: 10),
 
-              // BOTÓN DE "OLVIDÉ MI CONTRASEÑA"
+              // Password recovery flow entry point.
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    // Extraemos el texto que el usuario haya escrito
                     final correoEscrito = _usuarioController.text.trim();
                     
                     Navigator.push(
@@ -168,7 +181,7 @@ Future<void> _iniciarSesion() async {
               const SizedBox(height: 20),
 
               if (_isLoading)
-                const CircularProgressIndicator()
+                const CircularProgressIndicator(color: Color(0xFF800000))
               else
                 Column(
                   children: [
@@ -180,23 +193,24 @@ Future<void> _iniciarSesion() async {
                         minimumSize: const Size(double.infinity, 50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text("INICIAR SESIÓN", style: TextStyle(fontSize: 16)),
+                      child: const Text("INICIAR SESIÓN", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(height: 15),
                     
-                    // Botón de registro secundario
                     OutlinedButton(
                       onPressed: () {
-                        // NAVEGACIÓN A LA PANTALLA DE REGISTRO
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => RegisterScreen()),
+                          MaterialPageRoute(builder: (context) => const RegisterScreen()),
                         );
                       },
                       style: OutlinedButton.styleFrom(
-                          // ... tus estilos
+                        foregroundColor: const Color(0xFF800000),
+                        side: const BorderSide(color: Color(0xFF800000)),
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text("Registrarse (Crear Cuenta)"),
+                      child: const Text("Registrarse (Crear Cuenta)", style: TextStyle(fontSize: 16)),
                     ),
                   ],
                 ),

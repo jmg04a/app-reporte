@@ -6,37 +6,36 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:window_manager/window_manager.dart'; 
 
-// --- IMPORTA TUS PANTALLAS (Ajusta las rutas si es necesario) ---
 import 'screens/splash/splash_screen.dart'; 
 import 'screens/reportes/filter_screen.dart'; 
 import 'screens/reportes/create_report_screen.dart'; 
 
-// =======================================================
-// CONTROLES REMOTOS GLOBALES
-// =======================================================
+/// Global configuration states.
+/// [navigatorKey] provides global access to the NavigatorState for imperative routing outside the widget tree.
+/// [globalTabIndex] manages the state of the BottomNavigationBar across the application.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-final ValueNotifier<int> globalTabIndex = ValueNotifier<int>(0); // 0 = Home, 3 = Perfil
+final ValueNotifier<int> globalTabIndex = ValueNotifier<int>(0);
 
-// =======================================================
-// ¡NUEVO! FUNCIÓN EXPERTA PARA NAVEGACIÓN GLOBAL SEGURA
-// =======================================================
+/// Pushes a new route globally while preventing duplicate stacking.
+///
+/// Evaluates the current navigation stack and pops intermediate routes
+/// to maintain a shallow stack depth and prevent memory bloat.
 void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
-  bool yaEstaEnTop = false;
+  bool isAlreadyOnTop = false;
   
-  // 1. Revisamos qué pantalla está hasta arriba en este instante
+  // Inspect the top-most route without mutating the navigation stack.
   navigatorKey.currentState?.popUntil((route) {
-    yaEstaEnTop = route.settings.name == nombreRuta;
-    return true; // Retornar true hace que no cierre nada, solo es para espiar
+    isAlreadyOnTop = route.settings.name == nombreRuta;
+    return true; 
   });
 
-  // 2. Si ya estamos exactamente en esa pantalla, la dejamos en paz
-  if (yaEstaEnTop) return;
+  // Abort if the target route is already actively displayed.
+  if (isAlreadyOnTop) return;
 
-  // 3. Si estábamos en OTRA pantalla secundaria, limpiamos la pila 
-  // cerrando todo hasta llegar a la base (MainNavigationScreen)
+  // Clear intermediate secondary routes to return to the root MainNavigationScreen.
   navigatorKey.currentState?.popUntil((route) => route.isFirst);
   
-  // 4. Ahora sí, abrimos la pantalla solicitada sobre una base limpia
+  // Push the target route with its respective RouteSettings for future state checks.
   navigatorKey.currentState?.push(
     MaterialPageRoute(
       settings: RouteSettings(name: nombreRuta),
@@ -48,7 +47,7 @@ void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Configuración de ventana (Windows/Mac/Linux)
+  // Desktop platform window initialization.
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
@@ -66,8 +65,10 @@ Future<void> main() async {
     });
   }
 
+  // Environment variables initialization.
   await dotenv.load(fileName: ".env");
 
+  // Supabase BaaS initialization.
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
@@ -76,6 +77,7 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
+// Singleton instance of the Supabase client.
 final supabase = Supabase.instance.client;
 
 class MyApp extends StatelessWidget {
@@ -83,51 +85,46 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Detección de sistema operativo para atajos (Cmd vs Ctrl)
+    // Platform check to assign correct hardware modifier keys (Meta for macOS, Control otherwise).
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
     return CallbackShortcuts(
       bindings: {
-        // 1. ESCAPE: Retroceder
+        // Unmount current route.
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (navigatorKey.currentState?.canPop() == true) {
             navigatorKey.currentState?.pop();
           }
         },
 
-        // 2. BUSCAR: Ctrl + F o Cmd + F
+        // Trigger global search view.
         SingleActivator(LogicalKeyboardKey.keyF, control: !isMac, meta: isMac): () {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
-
-        // 3.  BUSCAR Alternativo: Ctrl + K o Cmd + K 
         SingleActivator(LogicalKeyboardKey.keyK, control: !isMac, meta: isMac): () {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
 
-        // 4. CREAR NUEVO: Ctrl + N o Cmd + N
+        // Trigger report creation view.
         SingleActivator(LogicalKeyboardKey.keyN, control: !isMac, meta: isMac): () {
           _abrirPantallaGlobal('/crear_reporte', const CreateReportScreen());
         },
-        // 5. INICIO (HOME): Ctrl + H o Cmd + H
+
+        // Navigate to root stack (Home).
         SingleActivator(LogicalKeyboardKey.keyH, control: !isMac, meta: isMac): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst); 
-          globalTabIndex.value = 0; // Cambiamos la pestaña
+          globalTabIndex.value = 0; 
         },
-        
-        // 5. INICIO Alternativo: Ctrl + 1 o Cmd + 1
         SingleActivator(LogicalKeyboardKey.digit1, control: !isMac, meta: isMac): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 0; 
         },
 
-        // 6. PERFIL: Ctrl + P o Cmd + P
+        // Navigate to root stack (Profile).
         SingleActivator(LogicalKeyboardKey.keyP, control: !isMac, meta: isMac): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
-          globalTabIndex.value = 3; // Cambiamos la pestaña
+          globalTabIndex.value = 3; 
         },
-        
-        // 6. PERFIL Alternativo: Ctrl + , o Cmd + ,
         SingleActivator(LogicalKeyboardKey.comma, control: !isMac, meta: isMac): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 3; 

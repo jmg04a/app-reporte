@@ -3,15 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// --- IMPORTANTE: Conecta este archivo con tu main.dart ---
 import '../../main.dart'; 
-
 import '../reportes/filter_screen.dart'; 
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import '../reportes/create_report_screen.dart';
 
+/// Root application shell after authentication.
+///
+/// Manages the primary [BottomNavigationBar] and preserves the state of 
+/// the main feed ([HomeScreen]) and user profile ([ProfileScreen]) 
+/// using an [IndexedStack] to prevent unnecessary widget rebuilds.
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -21,6 +23,9 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _indiceActual = 0;
+  
+  /// GlobalKey used to delegate hardware keyboard events (like 'Scroll to Top')
+  /// down to the active [HomeScreenState].
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
 
   String _nombreUsuario = 'Cargando...';
@@ -32,7 +37,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     _cargarDatosUsuario();
 
-    // ESCUCHAMOS EL TECLADO GLOBAL
+    // Sync local navigation state with global keyboard shortcut events.
     globalTabIndex.addListener(() {
       if (mounted && (globalTabIndex.value == 0 || globalTabIndex.value == 3)) {
         setState(() {
@@ -42,6 +47,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
+  /// Fetches basic user metadata to populate the profile tab reactively.
   Future<void> _cargarDatosUsuario() async {
     try {
       final supabase = Supabase.instance.client;
@@ -67,6 +73,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
+  /// Intercepts the back button at the root level to prevent accidental 
+  /// app closures, requiring explicit user confirmation.
   Future<void> _salirDeLaApp() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -99,17 +107,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  // ¡SE ELIMINÓ LA FUNCIÓN _construirPantalla()!
-
   @override
-@override
   Widget build(BuildContext context) {
-    // Lógica inteligente: Si el índice de la barra es 3 (Perfil), mostramos el índice 1 del Stack.
-    // De lo contrario, mostramos el índice 0 del Stack (Home).
+    // Maps the 4-item NavigationBar index to the 2-item IndexedStack.
     int stackIndex = _indiceActual == 3 ? 1 : 0;
     
-    // ¡NUEVO! Detectamos si es Mac para los atajos
-    final bool isMac = !kIsWeb && Platform.isMacOS; 
+    // Evaluate hardware platform to apply correct modifier keys (Cmd/Ctrl).
+    final bool isMac = !kIsWeb && Platform.isMacOS;
 
     return PopScope(
       canPop: false,
@@ -117,13 +121,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         if (didPop) return;
         await _salirDeLaApp();
       },
-      // =========================================================
-      // ¡NUEVO! ENVOLVEMOS EL SCAFFOLD PARA ATRAPAR EL TECLADO
-      // =========================================================
+      // Root-level keyboard event listener. Prevents child screens from
+      // competing for Focus and ensures global hotkeys always register.
       child: CallbackShortcuts(
         bindings: {
           SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): () {
-            // Solo scrolleamos si estamos en la pestaña de Inicio
             if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
           },
           const SingleActivator(LogicalKeyboardKey.home): () {
@@ -133,16 +135,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         child: Focus(
           autofocus: true,
           child: Scaffold(
-            // =========================================================
-            // AQUÍ ESTÁ LA MAGIA: INDEXEDSTACK PARA PRESERVAR EL ESTADO
-            // =========================================================
             body: IndexedStack(
               index: stackIndex,
               children: [
-                // Índice 0 del Stack: HomeScreen (Se mantiene vivo siempre)
                 HomeScreen(key: _homeKey),
                 
-                // Índice 1 del Stack: ProfileScreen (Se mantiene vivo siempre)
                 ProfileScreen(
                   nombre: _nombreUsuario,
                   rol: _rolUsuario,
@@ -160,11 +157,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               selectedIndex: _indiceActual,
               onDestinationSelected: (int index) async {
                 if (index == 1) {
+                  // Push imperative route over the shell for search view.
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const FilterScreen()),
                   );
                 } else if (index == 2) {
+                  // Push imperative route for creation, awaiting its pop to refresh the feed.
                   await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const CreateReportScreen()),

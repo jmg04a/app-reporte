@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Entry point for new user registration.
+///
+/// Handles user creation via Supabase Auth and collects extended metadata 
+/// (full name, student status, and academic major) to be appended 
+/// to the internal `auth.users` raw metadata payload.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -9,20 +14,23 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  // CONTROLADORES
   final _nombreController = TextEditingController();
   final _correoController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  /// Institutional domain suffix appended automatically if the user omits it.
   static const String _dominio = "@correo.itlalaguna.edu.mx";
+  
   bool _isLoading = false;
 
-  // LÓGICA DE CARRERAS
+  /// Holds the cached catalog of academic majors fetched from the database.
   List<Map<String, dynamic>> _carreras = []; 
+  
   int? _selectedCarreraId;
   
-  // VARIABLE DE ESTADO
+  /// Controls the visibility and enforcement of the academic major dropdown.
+  /// If true, [_selectedCarreraId] becomes a required field.
   bool _esAlumno = false; 
 
   @override
@@ -30,7 +38,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.initState();
     _cargarCarreras();
     
-    // Escuchamos lo que escribe para "sugerir" si es alumno
+    // Attach listener to evaluate input heuristically in real-time.
     _correoController.addListener(_sugerirTipoUsuario);
   }
 
@@ -44,18 +52,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // --- EL DETECTIVE (Sugerencia) ---
+  /// Heuristic algorithm to auto-detect if the user is a student.
+  ///
+  /// Evaluates the prefix of the institutional email. ITL students typically 
+  /// use 'alu.[control_number]' or '[l][control_number]'. 
+  /// Automatically toggles the [_esAlumno] state to enhance UX, though 
+  /// the user retains manual override control via the Switch widget.
   void _sugerirTipoUsuario() {
     final texto = _correoController.text.trim().toLowerCase();
     
-    // Lógica simple: Si empieza con 'alu.' o 'l' seguido de números, SUGERIMOS que es alumno.
-    // Pero el usuario podrá cambiarlo manualmente con el Switch.
     bool pareceAlumno = texto.startsWith('alu.') || 
-                        texto.startsWith('l') && RegExp(r'^l[0-9]').hasMatch(texto) ||
+                        (texto.startsWith('l') && RegExp(r'^l[0-9]').hasMatch(texto)) ||
                         RegExp(r'^[0-9]').hasMatch(texto);
 
-    // Solo actualizamos si el campo está vacío o si el patrón es muy obvio,
-    // para no molestar si el usuario ya lo apagó manualmente.
+    // Only auto-toggle to true if the heuristic matches and the state is currently false,
+    // avoiding disruptive UX overrides if the user manually disabled it.
     if (pareceAlumno && !_esAlumno) {
       setState(() {
         _esAlumno = true;
@@ -63,6 +74,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Fetches the 'cat_carreras' catalog from Supabase to populate the dropdown.
   Future<void> _cargarCarreras() async {
     try {
       final data = await Supabase.instance.client
@@ -80,6 +92,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Displays transient UI feedback for validation and network responses.
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -90,14 +103,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  /// Orchestrates the registration flow and payload construction.
   Future<void> _crearCuenta() async {
-    // 1. VALIDACIONES
+    // 1. Pre-flight UI Validation
     if (_nombreController.text.trim().isEmpty) {
       _mostrarMensaje("Ingresa tu nombre completo.", esError: true);
       return;
     }
     
-    // Solo validamos carrera si el switch de Alumno está ENCENDIDO
+    // Enforce major selection strictly if the student flag is active.
     if (_esAlumno && _selectedCarreraId == null) {
       _mostrarMensaje("Por favor selecciona tu carrera.", esError: true);
       return;
@@ -115,24 +129,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // 2. Data Sanitization
       String inputCorreo = _correoController.text.trim();
       String emailFinal = inputCorreo.contains('@') 
           ? inputCorreo 
           : inputCorreo + _dominio;
 
-      // 3. ENVIAR A SUPABASE
+      // 3. Auth Request
+      // We embed extended metadata ('data' object) which triggers a Postgres 
+      // trigger on the backend to automatically populate the 'perfiles' and 
+      // 'estudiantes' tables upon successful registration.
       final response = await Supabase.instance.client.auth.signUp(
         email: emailFinal,
         password: _passwordController.text,
         data: {
           'full_name': _nombreController.text.trim(),
-          // Aquí respetamos lo que diga el Switch (_esAlumno)
           'carrera_id': _esAlumno ? _selectedCarreraId : null, 
         },
       );
 
       if (!mounted) return;
 
+      // 4. Response Handling
+      // If session is null, email confirmation is strictly required by the backend.
       if (response.session == null) {
         showDialog(
           context: context,
@@ -142,8 +161,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Close dialog
+                  Navigator.pop(context); // Pop back to LoginScreen
                 },
                 child: const Text("Ir al Login"),
               ),
@@ -192,7 +211,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 30),
 
-              // NOMBRE
               TextField(
                 controller: _nombreController,
                 decoration: const InputDecoration(
@@ -204,7 +222,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 15),
 
-              // CORREO
               TextField(
                 controller: _correoController,
                 decoration: const InputDecoration(
@@ -217,8 +234,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 keyboardType: TextInputType.text, 
               ),
               
-              // --- EL INTERRUPTOR MÁGICO ---
-              // Esto le da el control final al usuario
+              // Manual override for the student heuristic
               SwitchListTile(
                 title: const Text(
                   "¿Eres Estudiante?", 
@@ -230,19 +246,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 onChanged: (bool valor) {
                   setState(() {
                     _esAlumno = valor;
-                    // Si lo apaga, limpiamos la selección para no enviar basura
+                    // Garbage collection: Nullify major if user is not a student
+                    // to prevent sending dirty data to Supabase.
                     if (!_esAlumno) _selectedCarreraId = null;
                   });
                 },
               ),
-              // -----------------------------
 
-              // DROPDOWN (Solo visible si el Switch está ON)
+              // Academic Major Dropdown (Conditional rendering based on [_esAlumno])
               if (_esAlumno) ...[
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
                   initialValue: _selectedCarreraId,
-                  isExpanded: true, // Para que el texto largo no rompa el diseño
+                  isExpanded: true, 
                   decoration: const InputDecoration(
                     labelText: "Carrera",
                     prefixIcon: Icon(Icons.school_outlined),
@@ -270,7 +286,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               
               const SizedBox(height: 15),
 
-              // PASSWORD
               TextField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -282,7 +297,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 15),
 
-              // CONFIRMAR PASSWORD
               TextField(
                 controller: _confirmPasswordController,
                 decoration: const InputDecoration(
@@ -294,9 +308,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 30),
 
-              // BOTÓN
               if (_isLoading)
-                const Center(child: CircularProgressIndicator())
+                const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
               else
                 ElevatedButton(
                   onPressed: _crearCuenta,
@@ -305,7 +318,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  child: const Text("REGISTRARME", style: TextStyle(fontSize: 18)),
+                  child: const Text("REGISTRARME", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
             ],
           ),
