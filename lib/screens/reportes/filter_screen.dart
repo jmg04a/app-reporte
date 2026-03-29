@@ -275,6 +275,7 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 10),
                   
                   DropdownButtonFormField<int>(
+                    isExpanded: true,
                     initialValue: safeCategoriaId, 
                     decoration: const InputDecoration(labelText: "Categoría", prefixIcon: Icon(Icons.category), border: OutlineInputBorder()),
                     items: [
@@ -380,6 +381,7 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 15),
 
                   DropdownButtonFormField<int>(
+                    isExpanded: true, 
                     initialValue: safeCarreraId, 
                     decoration: const InputDecoration(labelText: "Carrera del estudiante (Opcional)", prefixIcon: Icon(Icons.school), border: OutlineInputBorder()),
                     items: [
@@ -392,6 +394,7 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 15),
 
                   DropdownButtonFormField<String>(
+                    isExpanded: true, 
                     initialValue: safeEstado,
                     decoration: const InputDecoration(labelText: "Estado", prefixIcon: Icon(Icons.flag), border: OutlineInputBorder()),
                     items: const [
