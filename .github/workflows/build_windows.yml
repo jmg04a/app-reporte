@@ -1,0 +1,41 @@
+name: Compilar Windows x64
+
+# Esto hace que se ejecute cuando subas cambios a 'main' 
+# y también te pone un botón para ejecutarlo manualmente cuando quieras.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Le pedimos a GitHub una computadora con Windows (que tiene arquitectura x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Inyectar variables de entorno (.env)
+        shell: bash
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+
+      - name: Descargar librerias
+        run: flutter pub get
+
+      - name: Compilar para Windows (Release)
+        run: flutter build windows --release
+
+      - name: Guardar el .exe y los archivos (Artefacto)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reportes_ITL_Windows
+          # Esta es la ruta donde Flutter deja el programa terminado en Windows
+          path: build\windows\x64\runner\Release\
