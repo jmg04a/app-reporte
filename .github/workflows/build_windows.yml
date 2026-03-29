@@ -24,8 +24,7 @@ jobs:
       - name: Inyectar variables de entorno (.env)
         shell: bash
         run: |
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
-          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          printf "SUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\n" "${{ secrets.SUPABASE_URL }}" "${{ secrets.SUPABASE_ANON_KEY }}" > .env
 
       - name: Descargar librerias
         run: flutter pub get
