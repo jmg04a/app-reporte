@@ -187,7 +187,7 @@ class HomeScreenState extends State<HomeScreen> {
                 : ListView.builder(
                     controller: _scrollController, 
                     // High cacheExtent prevents widget recycling flickering on large image lists.
-                    cacheExtent: 2500, 
+                    cacheExtent: 1800, 
                     padding: const EdgeInsets.all(12),
                     itemCount: _reportes.length + 1, 
                     itemBuilder: (context, index) {
