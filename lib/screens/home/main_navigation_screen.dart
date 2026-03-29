@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
+
 import '../../main.dart'; 
 import '../reportes/filter_screen.dart'; 
 import 'home_screen.dart';
@@ -32,10 +35,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String _rolUsuario = '';
   String? _avatarUrl;
 
+  // Variables para el monitor de red
+  late StreamSubscription<InternetStatus> _suscripcionInternet;
+  bool _tieneInternet = true;
+  bool _esPrimerArranque = true;
+
   @override
   void initState() {
     super.initState();
     _cargarDatosUsuario();
+
+    // --- Monitor de Internet Real (Hardware + Ping) ---
+    _suscripcionInternet = InternetConnection().onStatusChange.listen(_estadoRedCambio);
 
     // Sync local navigation state with global keyboard shortcut events.
     globalTabIndex.addListener(() {
@@ -45,6 +56,60 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         });
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _suscripcionInternet.cancel(); // Evita fugas de memoria
+    super.dispose();
+  }
+
+  /// Lógica del Banner de Conexión
+  void _estadoRedCambio(InternetStatus status) {
+    final hayConexion = status == InternetStatus.connected;
+
+    if (_tieneInternet != hayConexion) {
+      if (mounted) setState(() => _tieneInternet = hayConexion);
+
+      if (!hayConexion) {
+        // Mostrar Banner Rojo
+        ScaffoldMessenger.of(context).showMaterialBanner(
+          MaterialBanner(
+            backgroundColor: const Color(0xFF800000), // Guinda ITL
+            leading: const Icon(Icons.wifi_off, color: Colors.white),
+            content: const Text(
+              "Sin conexión a Internet. Verifica tu red.",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+                child: const Text("Entendido", style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // Ocultar Banner Rojo y mostrar SnackBar Verde (solo si no es el primer arranque)
+        ScaffoldMessenger.of(context).clearMaterialBanners();
+        if (!_esPrimerArranque) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.wifi, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text("¡Conexión restaurada!"),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    }
+    _esPrimerArranque = false;
   }
 
   /// Fetches basic user metadata to populate the profile tab reactively.
