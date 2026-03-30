@@ -23,7 +23,6 @@ jobs:
       # ⚠️ PASO CRÍTICO: Reconstruir el archivo .env en el servidor
       - name: 🔐 Crear archivo .env de Supabase
         run: |
-          run: | 
           mkdir -p assets
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > assets/.env
           echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> assets/.env
