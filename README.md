@@ -58,4 +58,4 @@ El proyecto se encuentra en constante evolución. Las siguientes tareas están p
 - [ ] **Pantalla de Ajustes:** Crear un menú de configuración para manejar preferencias locales de la aplicación.
 - [ ] **Dark Mode:** Soporte nativo para Tema Oscuro y opciones de personalización de la paleta de colores.
 - [ ] **Branding Oficial:** Diseño e integración de recursos gráficos finales (ícono de la app, logotipo y *Splash Screen* mejorado).
-
+- [ ] **Sprint de la BD:** Para que cualquiera pueda replicarla y probar la aplicación.
