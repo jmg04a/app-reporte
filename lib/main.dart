@@ -69,7 +69,7 @@ Future<void> main() async {
   }
 
   // Environment variables initialization.
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "assets/.env");
 
   // Supabase BaaS initialization.
   await Supabase.initialize(

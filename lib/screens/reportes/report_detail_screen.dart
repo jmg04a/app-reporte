@@ -296,7 +296,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         numeroControl = dataEstudiante['numero_control'];
       }
     }
-
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text("Detalle del Reporte"),

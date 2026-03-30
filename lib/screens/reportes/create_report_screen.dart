@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image/image.dart' as img;
 
 /// Dual-purpose form interface for report creation and modification.
 ///
@@ -407,15 +408,36 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       // 2. Binary Upload (If a new image is attached)
       if (_imagenSeleccionada != null) {
-        final extension = _imagenSeleccionada!.name.split('.').last;
-        final nombreArchivo = '${DateTime.now().millisecondsSinceEpoch}.$extension';
+        // Forzamos la extensión a JPG porque vamos a comprimir a ese formato
+        final nombreArchivo = '${DateTime.now().millisecondsSinceEpoch}.jpg';
         final rutaArchivo = '$userId/$nombreArchivo';
-        final imageBytes = await _imagenSeleccionada!.readAsBytes();
+        
+        // Leemos el archivo pesadísimo
+        Uint8List imageBytes = await _imagenSeleccionada!.readAsBytes();
 
+        // 🛑 COMPRESIÓN MANUAL (Solo para Escritorio: Mac, Windows, Linux)
+        if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+          // Decodificamos el mapa de bits
+          img.Image? imagenOriginal = img.decodeImage(imageBytes);
+          
+          if (imagenOriginal != null) {
+            // Achicamos preservando el Aspect Ratio
+            img.Image imagenAchicada = img.copyResize(imagenOriginal, width: 1080);
+            
+            // Re-escribimos la variable con los nuevos bytes comprimidos
+            imageBytes = Uint8List.fromList(img.encodeJpg(imagenAchicada, quality: 70));
+          }
+        }
+
+        // Subimos los bytes (ya sean los del celular o los comprimidos en PC)
         await supabase.storage.from('evidencias').uploadBinary(
               rutaArchivo,
               imageBytes,
-              fileOptions: FileOptions(cacheControl: '3600', upsert: false, contentType: 'image/$extension'),
+              fileOptions: const FileOptions(
+                cacheControl: '3600', 
+                upsert: false, 
+                contentType: 'image/jpeg'
+              ),
             );
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
@@ -657,7 +679,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                         borderRadius: BorderRadius.circular(8),
                         child: kIsWeb
                             ? Image.network(_imagenSeleccionada!.path, fit: BoxFit.contain)
-                            : Image.file(File(_imagenSeleccionada!.path), fit: BoxFit.contain),
+                            : Image.file(File(_imagenSeleccionada!.path), fit: BoxFit.contain,cacheWidth: 800,),
                       )
                     : (!_eliminoImagenVieja && _imagenViejaUrl != null)
                         ? ClipRRect(

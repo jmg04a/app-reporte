@@ -17,6 +17,7 @@ dependencies:
   window_manager: ^0.5.1
   flutter_cache_manager: ^3.4.1
   internet_connection_checker_plus: ^2.9.1+2
+  image: ^4.8.0
 
 dev_dependencies:
   flutter_test:
@@ -27,7 +28,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - .env
+    - assets/.env
 
 flutter_launcher_icons:
   android: true

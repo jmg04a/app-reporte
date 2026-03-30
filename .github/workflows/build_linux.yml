@@ -1,0 +1,79 @@
+name: Build Linux Release
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build-linux:
+    name: Compilar para Linux
+    runs-on: ubuntu-latest # Le pedimos a GitHub un servidor con Ubuntu (Linux)
+
+    steps:
+      - name: 📥 Clonar el código fuente
+        uses: actions/checkout@v4
+
+      # ⚠️ PASO CRÍTICO PARA LINUX: Instalar librerías del sistema operativo
+      - name: 🐧 Instalar dependencias de Linux
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake git ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: 🐦 Configurar entorno de Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 🔐 Crear archivo .env de Supabase
+        run: |
+          mkdir -p assets
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > assets/.env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> assets/.env
+
+      - name: 📦 Instalar dependencias
+        run: flutter pub get
+
+      - name: ⚙️ Compilar ejecutable nativo (Linux)
+        run: flutter build linux --release
+
+      - name: 📦 Empaquetar como AppImage
+        run: |
+          # 1. Descargar la herramienta oficial de AppImage
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+
+          # 2. Crear la estructura mágica del AppDir
+          mkdir -p AppDir/usr/bin
+          cp -r build/linux/x64/release/bundle/* AppDir/usr/bin/
+
+          # 3. Crear el script de arranque (AppRun)
+          cat << 'EOF' > AppDir/AppRun
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
+          exec "$HERE/usr/bin/reporte_itl" "$@" 
+          EOF
+          chmod +x AppDir/AppRun
+
+          # 4. Crear el archivo de configuración para el menú de Linux
+          cat << 'EOF' > AppDir/reporte_itl.desktop
+          [Desktop Entry]
+          Name=Reportes ITL
+          Exec=reporte_itl
+          Icon=reporte_itl
+          Type=Application
+          Categories=Utility;
+          EOF
+
+          # 5. Descargar un ícono genérico
+          cp assets/icon2.png AppDir/reporte_itl.png
+
+          # 6. Construir el archivo final (.AppImage)
+          ./appimagetool --appimage-extract-and-run AppDir Reporte_ITL-x86_64.AppImage
+
+      - name: 🚀 Subir el AppImage a GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reportes-ITL-Linux-AppImage
+          path: Reporte_ITL-x86_64.AppImage
+          
