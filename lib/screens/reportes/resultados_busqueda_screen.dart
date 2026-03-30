@@ -223,7 +223,6 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController, 
-                      cacheExtent: 2500, // Preemptively renders off-screen items to prevent flickering.
                       padding: const EdgeInsets.all(12),
                       itemCount: _reportes.length + 1, 
                       itemBuilder: (context, index) {

@@ -207,6 +207,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _descripcionController.text = borrador['descripcion'] ?? '';
         _selectedCategoriaId = borrador['categoriaId'];
         _selectedLugarId = borrador['lugarId'];
+
+        _autocompleteKey = UniqueKey();
       });
     }
 
@@ -340,7 +342,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   Future<void> _procesarImagen(ImageSource origen) async {
-    final XFile? image = await _picker.pickImage(source: origen, imageQuality: 70);
+    final XFile? image = await _picker.pickImage(
+      source: origen, 
+      imageQuality: 70,
+      maxWidth: 1080,
+      maxHeight: 1080,
+    );
     if (image != null) {
       setState(() {
         _imagenSeleccionada = image;
@@ -658,6 +665,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             child: CachedNetworkImage(
                               imageUrl: _imagenViejaUrl!,
                               fit: BoxFit.contain,
+                              memCacheWidth: 800,
                             ),
                           )
                         : const SizedBox(

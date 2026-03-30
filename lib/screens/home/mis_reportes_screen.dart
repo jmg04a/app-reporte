@@ -165,8 +165,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                       ),
                     )
                   : ListView.builder(
-                      controller: _scrollController, 
-                      cacheExtent: 2500, // Preemptively renders off-screen items to prevent flickering.
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(12),
                       itemCount: _misReportes.length + 1, 
                       itemBuilder: (context, index) {

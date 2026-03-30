@@ -47,6 +47,9 @@ void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  PaintingBinding.instance.imageCache.maximumSize = 20; // Max of 20 load pictures to ram 
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 15; // 15 MB as maximum 
+
   // Desktop platform window initialization.
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     await windowManager.ensureInitialized();

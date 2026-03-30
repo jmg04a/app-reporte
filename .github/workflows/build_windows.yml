@@ -1,0 +1,40 @@
+name: Build Windows Release
+
+# Este trigger permite que ejecutes la compilación manualmente 
+# desde la pestaña "Actions" en GitHub.
+on:
+  workflow_dispatch: 
+
+jobs:
+  build-windows:
+    name: Compilar para Windows
+    runs-on: windows-latest # Le pedimos a GitHub un servidor con Windows
+
+    steps:
+      - name: 📥 Clonar el código fuente
+        uses: actions/checkout@v4
+
+      - name: 🐦 Configurar entorno de Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true # Acelera las compilaciones futuras
+
+      # ⚠️ PASO CRÍTICO: Reconstruir el archivo .env en el servidor
+      - name: 🔐 Crear archivo .env de Supabase
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+
+      - name: 📦 Instalar dependencias
+        run: flutter pub get
+
+      - name: ⚙️ Compilar ejecutable nativo (AOT)
+        run: flutter build windows --release
+
+      - name: 🚀 Subir el ejecutable a GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reportes-ITL-Windows-Exe
+          # Esta es la ruta donde Flutter deja el programa terminado
+          path: build\windows\x64\runner\Release\*

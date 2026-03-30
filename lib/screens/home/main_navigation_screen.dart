@@ -73,6 +73,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
       if (!hayConexion) {
         // Mostrar Banner Rojo
+        ScaffoldMessenger.of(context).clearMaterialBanners();
+
         ScaffoldMessenger.of(context).showMaterialBanner(
           MaterialBanner(
             backgroundColor: const Color(0xFF800000), // Guinda ITL
@@ -93,6 +95,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         // Ocultar Banner Rojo y mostrar SnackBar Verde (solo si no es el primer arranque)
         ScaffoldMessenger.of(context).clearMaterialBanners();
         if (!_esPrimerArranque) {
+
+          ScaffoldMessenger.of(context).clearSnackBars();
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Row(
