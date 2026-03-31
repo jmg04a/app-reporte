@@ -223,6 +223,7 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController, 
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(12),
                       itemCount: _reportes.length + 1, 
                       itemBuilder: (context, index) {

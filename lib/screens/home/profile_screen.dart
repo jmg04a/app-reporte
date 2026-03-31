@@ -6,6 +6,9 @@ import '../auth/login_screen.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mis_reportes_screen.dart';
+import 'dart:io'; 
+import 'package:flutter/foundation.dart'; 
+import 'package:image/image.dart' as img;
 
 /// User profile management interface.
 ///
@@ -316,9 +319,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// Uploads a new avatar to Supabase Storage and updates the profile record.
+/// Uploads a new avatar to Supabase Storage and updates the profile record.
   Future<void> _cambiarFoto() async {
     try {
+      // Pedimos la imagen a la galería y dejamos que iOS/Android compriman por defecto
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (image == null) return; 
 
@@ -326,18 +330,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
-      final extension = image.name.split('.').last;
       
-      final nombreArchivo = 'avatar_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      // Forzamos la extensión a JPG
+      final nombreArchivo = 'avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final rutaArchivo = '$userId/$nombreArchivo';
 
-      final imageBytes = await image.readAsBytes();
+      // Leemos los bytes crudos
+      Uint8List imageBytes = await image.readAsBytes();
 
+      // 🛑 COMPRESIÓN MANUAL (Solo para Escritorio: Mac, Windows, Linux)
+      if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+        // Decodificamos el mapa de bits
+        img.Image? imagenOriginal = img.decodeImage(imageBytes);
+        
+        if (imagenOriginal != null) {
+          // Achicamos a 500px (ideal para avatares, ahorra aún más espacio que los 1080px)
+          img.Image imagenAchicada = img.copyResize(imagenOriginal, width: 540);
+          
+          // Re-escribimos la variable con los nuevos bytes comprimidos
+          imageBytes = Uint8List.fromList(img.encodeJpg(imagenAchicada, quality: 70));
+        }
+      }
+
+      // Subimos los bytes (ya sean los del celular o los comprimidos en PC)
       // Upsert: Replaces the previous file to save storage space.
       await supabase.storage.from('avatars').uploadBinary(
             rutaArchivo,
             imageBytes,
-            fileOptions: FileOptions(cacheControl: '0', upsert: true, contentType: 'image/$extension'),
+            fileOptions: const FileOptions(
+              cacheControl: '0', 
+              upsert: true, 
+              contentType: 'image/jpeg'
+            ),
           );
 
       final imageUrl = supabase.storage.from('avatars').getPublicUrl(rutaArchivo);
@@ -384,7 +408,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
   /// Terminates the user session and performs a hard reset of local storage.
   Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(

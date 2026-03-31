@@ -166,6 +166,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                     )
                   : ListView.builder(
                       controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(12),
                       itemCount: _misReportes.length + 1, 
                       itemBuilder: (context, index) {

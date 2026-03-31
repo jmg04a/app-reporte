@@ -177,6 +177,7 @@ class HomeScreenState extends State<HomeScreen> {
             ? const Center(child: CircularProgressIndicator()) 
             : _reportes.isEmpty
                 ? ListView( 
+                    physics: const AlwaysScrollableScrollPhysics(),
                     children: const [
                       SizedBox(height: 150),
                       Icon(Icons.inbox, size: 80, color: Colors.grey),
@@ -186,6 +187,7 @@ class HomeScreenState extends State<HomeScreen> {
                   )
                 : ListView.builder(
                     controller: _scrollController, 
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(12),
                     itemCount: _reportes.length + 1, 
                     itemBuilder: (context, index) {
