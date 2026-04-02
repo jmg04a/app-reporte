@@ -481,22 +481,39 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                           ),
                         ],
                       ),
+                      
+                      // --- Reaction Action Button ---
+                      // Implements frontend RBAC to prevent self-voting.
+                      // If the current user is the creator of the report (_isCreator), 
+                      // the onPressed callback is set to null, implicitly mutating the 
+                      // Material widget state to 'disabled' and preventing API calls.
                       ElevatedButton.icon(
-                        onPressed: _toggleReaccion,
+                        onPressed: _isCreator ? null : _toggleReaccion,
                         icon: Icon(
-                          _yaReacciono ? Icons.check_circle : Icons.warning_amber_rounded,
-                          color: _yaReacciono ? Colors.white : const Color(0xFF800000),
+                          _isCreator 
+                              ? Icons.person 
+                              : (_yaReacciono ? Icons.check_circle : Icons.warning_amber_rounded),
+                          color: _isCreator 
+                              ? Colors.grey.shade600 
+                              : (_yaReacciono ? Colors.white : const Color(0xFF800000)),
                         ),
                         label: Text(
-                          _yaReacciono ? "Ya reportado" : "A mí también",
+                          _isCreator 
+                              ? "Tu reporte" 
+                              : (_yaReacciono ? "Ya reportado" : "A mí también"),
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
+                          // Dynamic styling based on Optimistic UI state and RBAC status
                           backgroundColor: _yaReacciono ? const Color(0xFF800000) : Colors.white,
                           foregroundColor: _yaReacciono ? Colors.white : const Color(0xFF800000),
-                          elevation: _yaReacciono ? 2 : 0,
+                          disabledBackgroundColor: Colors.grey.shade200, 
+                          disabledForegroundColor: Colors.grey.shade500,
+                          elevation: _yaReacciono && !_isCreator ? 2 : 0,
                           side: BorderSide(
-                            color: _yaReacciono ? Colors.transparent : const Color(0xFF800000),
+                            color: _isCreator || _yaReacciono 
+                                ? Colors.transparent 
+                                : const Color(0xFF800000),
                             width: 1.5,
                           ),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
