@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'create_report_screen.dart'; 
 
@@ -32,11 +35,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   int _contadorReacciones = 0;
 
   final List<String> _estadosDisponibles = ['pendiente', 'en proceso', 'resuelto'];
+  
+  /// Explicit Focus node to guarantee global hotkey interception.
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _cargarDetalles();
+  }
+  
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   /// Fetches the comprehensive payload for the requested report.
@@ -105,6 +117,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  /// Routes to the CreateReportScreen in "Edit Mode" if permissions are met.
+  Future<void> _abrirEdicion() async {
+    if (_isCreator && _estadoActual.toLowerCase() == 'pendiente') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateReportScreen(reporteExistente: _reporteCompleto),
+        ),
+      );
+      _cargarDetalles(); 
     }
   }
 
@@ -297,257 +322,260 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       }
     }
     
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Detalle del Reporte"),
-        backgroundColor: const Color(0xFF800000),
-        foregroundColor: Colors.white,
-        actions: [
-          // Edit permission explicitly constrained to the original creator 
-          // and only when the report is still in 'pending' status.
-          if (_isCreator && _estadoActual.toLowerCase() == 'pendiente')
-            IconButton(
-              icon: const Icon(Icons.edit),
-              tooltip: "Editar reporte",
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CreateReportScreen(reporteExistente: _reporteCompleto),
-                  ),
-                );
-                _cargarDetalles(); 
-              },
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (imageUrl != null)
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 400), 
-                color: Colors.black87,
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain, 
-                  errorBuilder: (context, error, stackTrace) => 
-                      const SizedBox(height: 200, child: Icon(Icons.broken_image, size: 50, color: Colors.grey)),
+    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
+    FocusScope.of(context).requestFocus(_focusNode);
+
+    return CallbackShortcuts(
+      bindings: {
+        SingleActivator(LogicalKeyboardKey.keyE, control: !isApple, meta: isApple): _abrirEdicion,
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text("Detalle del Reporte"),
+            backgroundColor: const Color(0xFF800000),
+            foregroundColor: Colors.white,
+            actions: [
+              // Edit permission explicitly constrained to the original creator 
+              // and only when the report is still in 'pending' status.
+              if (_isCreator && _estadoActual.toLowerCase() == 'pendiente')
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  tooltip: "Editar reporte",
+                  onPressed: _abrirEdicion,
                 ),
-              )
-            else
-              Container(
-                height: 150,
-                color: Colors.grey[200],
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
-                    Text("Sin evidencia fotográfica", style: TextStyle(color: Colors.grey))
-                  ],
-                ),
-              ),
-
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_isAdmin) ...[
-                    const Text("Gestión de Administrador", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-                    const SizedBox(height: 5),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: _getColorEstado(_estadoActual).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _getColorEstado(_estadoActual)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _estadoActual,
-                          isExpanded: true,
-                          icon: Icon(Icons.arrow_drop_down, color: _getColorEstado(_estadoActual)),
-                          items: _estadosDisponibles.map((estado) {
-                            return DropdownMenuItem(
-                              value: estado,
-                              child: Text(estado.toUpperCase(), style: TextStyle(color: _getColorEstado(estado), fontWeight: FontWeight.bold)),
-                            );
-                          }).toList(),
-                          onChanged: (nuevoEstado) {
-                            if (nuevoEstado != null) _actualizarEstado(nuevoEstado);
-                          },
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    Chip(
-                      label: Text(_estadoActual.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                      backgroundColor: _getColorEstado(_estadoActual),
-                    ),
-                  ],
-                  
-                  const SizedBox(height: 15),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: Text(reporte['titulo'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
-                      Chip(
-                        avatar: Icon(Icons.category, color: _getColorFromHex(categoria['color']), size: 18),
-                        label: Text(categoria['nombre']),
-                        backgroundColor: _getColorFromHex(categoria['color']).withValues(alpha: 0.1),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
+            ],
+          ),
+          body: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (imageUrl != null)
                   Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey[300]!)
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxHeight: 400), 
+                    color: Colors.black87,
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain, 
+                      errorBuilder: (context, error, stackTrace) => 
+                          const SizedBox(height: 200, child: Icon(Icons.broken_image, size: 50, color: Colors.grey)),
                     ),
-                    child: Row(
+                  )
+                else
+                  Container(
+                    height: 150,
+                    color: Colors.grey[200],
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                          backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                          child: avatarUrl == null ? const Icon(Icons.person, color:  Color(0xFF800000)) : null,
-                        ),
-                        const SizedBox(width: 15),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text("Reportado por", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                              Text(nombreCreador, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                              if (numeroControl != null)
-                                Text("No. Control: $numeroControl", style: const TextStyle(fontSize: 14, color: Colors.blueGrey)),
-                              
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                                  const SizedBox(width: 4),
-                                  Text(fechaFormateada, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                ],
-                              ),
-                            ],
-                          ),
-                        )
+                        Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+                        Text("Sin evidencia fotográfica", style: TextStyle(color: Colors.grey))
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
 
-                  const Text("Ubicación", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 5),
-                  Row(
+                Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.location_on, color: Color(0xFF800000)),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_ubicacionExacta, style: const TextStyle(fontSize: 16))),
-                    ],
-                  ),
-                  const Padding(padding: EdgeInsets.symmetric(vertical: 15), child: Divider()),
+                      if (_isAdmin) ...[
+                        const Text("Gestión de Administrador", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        const SizedBox(height: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: _getColorEstado(_estadoActual).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _getColorEstado(_estadoActual)),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _estadoActual,
+                              isExpanded: true,
+                              icon: Icon(Icons.arrow_drop_down, color: _getColorEstado(_estadoActual)),
+                              items: _estadosDisponibles.map((estado) {
+                                return DropdownMenuItem(
+                                  value: estado,
+                                  child: Text(estado.toUpperCase(), style: TextStyle(color: _getColorEstado(estado), fontWeight: FontWeight.bold)),
+                                );
+                              }).toList(),
+                              onChanged: (nuevoEstado) {
+                                if (nuevoEstado != null) _actualizarEstado(nuevoEstado);
+                              },
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        Chip(
+                          label: Text(_estadoActual.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                          backgroundColor: _getColorEstado(_estadoActual),
+                        ),
+                      ],
+                      
+                      const SizedBox(height: 15),
 
-                  const Text("Descripción del problema", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text(
-                    reporte['descripcion'] ?? 'Sin descripción adicional.',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  
-                  const SizedBox(height: 30),
-                  const Divider(),
-                  const SizedBox(height: 10),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.group, color: Colors.grey[600]),
-                          const SizedBox(width: 8),
-                          Text(
-                            "$_contadorReacciones ${_contadorReacciones == 1 ? 'persona tiene' : 'personas tienen'}\neste problema",
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey[800]),
+                          Expanded(child: Text(reporte['titulo'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
+                          Chip(
+                            avatar: Icon(Icons.category, color: _getColorFromHex(categoria['color']), size: 18),
+                            label: Text(categoria['nombre']),
+                            backgroundColor: _getColorFromHex(categoria['color']).withValues(alpha: 0.1),
                           ),
                         ],
                       ),
-                      
-                      // --- Reaction Action Button ---
-                      // Implements frontend RBAC to prevent self-voting.
-                      // If the current user is the creator of the report (_isCreator), 
-                      // the onPressed callback is set to null, implicitly mutating the 
-                      // Material widget state to 'disabled' and preventing API calls.
-                      ElevatedButton.icon(
-                        onPressed: _isCreator ? null : _toggleReaccion,
-                        icon: Icon(
-                          _isCreator 
-                              ? Icons.person 
-                              : (_yaReacciono ? Icons.check_circle : Icons.warning_amber_rounded),
-                          color: _isCreator 
-                              ? Colors.grey.shade600 
-                              : (_yaReacciono ? Colors.white : const Color(0xFF800000)),
+                      const SizedBox(height: 20),
+
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey[300]!)
                         ),
-                        label: Text(
-                          _isCreator 
-                              ? "Tu reporte" 
-                              : (_yaReacciono ? "Ya reportado" : "A mí también"),
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          // Dynamic styling based on Optimistic UI state and RBAC status
-                          backgroundColor: _yaReacciono ? const Color(0xFF800000) : Colors.white,
-                          foregroundColor: _yaReacciono ? Colors.white : const Color(0xFF800000),
-                          disabledBackgroundColor: Colors.grey.shade200, 
-                          disabledForegroundColor: Colors.grey.shade500,
-                          elevation: _yaReacciono && !_isCreator ? 2 : 0,
-                          side: BorderSide(
-                            color: _isCreator || _yaReacciono 
-                                ? Colors.transparent 
-                                : const Color(0xFF800000),
-                            width: 1.5,
-                          ),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                              child: avatarUrl == null ? const Icon(Icons.person, color:  Color(0xFF800000)) : null,
+                            ),
+                            const SizedBox(width: 15),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("Reportado por", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                  Text(nombreCreador, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  if (numeroControl != null)
+                                    Text("No. Control: $numeroControl", style: const TextStyle(fontSize: 14, color: Colors.blueGrey)),
+                                  
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(fechaFormateada, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            )
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 20),
+
+                      const Text("Ubicación", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Color(0xFF800000)),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(_ubicacionExacta, style: const TextStyle(fontSize: 16))),
+                        ],
+                      ),
+                      const Padding(padding: EdgeInsets.symmetric(vertical: 15), child: Divider()),
+
+                      const Text("Descripción del problema", style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(
+                        reporte['descripcion'] ?? 'Sin descripción adicional.',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      
+                      const SizedBox(height: 30),
+                      const Divider(),
+                      const SizedBox(height: 10),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.group, color: Colors.grey[600]),
+                              const SizedBox(width: 8),
+                              Text(
+                                "$_contadorReacciones ${_contadorReacciones == 1 ? 'persona tiene' : 'personas tienen'}\neste problema",
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey[800]),
+                              ),
+                            ],
+                          ),
+                          
+                          // --- Reaction Action Button ---
+                          // Implements frontend RBAC to prevent self-voting.
+                          // If the current user is the creator of the report (_isCreator), 
+                          // the onPressed callback is set to null, implicitly mutating the 
+                          // Material widget state to 'disabled' and preventing API calls.
+                          ElevatedButton.icon(
+                            onPressed: _isCreator ? null : _toggleReaccion,
+                            icon: Icon(
+                              _isCreator 
+                                  ? Icons.person 
+                                  : (_yaReacciono ? Icons.check_circle : Icons.warning_amber_rounded),
+                              color: _isCreator 
+                                  ? Colors.grey.shade600 
+                                  : (_yaReacciono ? Colors.white : const Color(0xFF800000)),
+                            ),
+                            label: Text(
+                              _isCreator 
+                                  ? "Tu reporte" 
+                                  : (_yaReacciono ? "Ya reportado" : "A mí también"),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              // Dynamic styling based on Optimistic UI state and RBAC status
+                              backgroundColor: _yaReacciono ? const Color(0xFF800000) : Colors.white,
+                              foregroundColor: _yaReacciono ? Colors.white : const Color(0xFF800000),
+                              disabledBackgroundColor: Colors.grey.shade200, 
+                              disabledForegroundColor: Colors.grey.shade500,
+                              elevation: _yaReacciono && !_isCreator ? 2 : 0,
+                              side: BorderSide(
+                                color: _isCreator || _yaReacciono 
+                                    ? Colors.transparent 
+                                    : const Color(0xFF800000),
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 30),
+
+                      if (_isAdmin || _isCreator) ...[
+                        const Divider(),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _borrarReporte,
+                            icon: const Icon(Icons.delete_forever),
+                            label: const Text("ELIMINAR REPORTE", style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red, width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 40),
                     ],
                   ),
-                  const SizedBox(height: 30),
-
-                  if (_isAdmin || _isCreator) ...[
-                    const Divider(),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _borrarReporte,
-                        icon: const Icon(Icons.delete_forever),
-                        label: const Text("ELIMINAR REPORTE", style: TextStyle(fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red, width: 1.5),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 40),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -31,6 +31,9 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
   bool _cargandoMas = false;
 
   final ScrollController _scrollController = ScrollController();
+  
+  /// Explicit Focus node to guarantee global hotkey interception on pushed routes.
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
@@ -40,6 +43,7 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -190,15 +194,19 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
   @override
   Widget build(BuildContext context) {
     // Hardware evaluation to apply correct OS-level modifier keys.
-    final bool isMac = !kIsWeb && Platform.isMacOS;
+    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
+
+    // Assert visual focus to enable keyboard shortcut interception.
+    FocusScope.of(context).requestFocus(_focusNode);
 
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): _scrollToTop,
+        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple): _cargarResultados,
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple): _scrollToTop,
         const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
       },
       child: Focus(
-        autofocus: true,
+        focusNode: _focusNode,
         child: Scaffold(
           appBar: AppBar(
             title: GestureDetector(
@@ -208,59 +216,63 @@ class _ResultadosBusquedaScreenState extends State<ResultadosBusquedaScreen> {
             backgroundColor: const Color(0xFF800000),
             foregroundColor: Colors.white,
           ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-              : _reportes.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
+          body: RefreshIndicator(
+            onRefresh: _cargarResultados,
+            color: const Color(0xFF800000),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                : _reportes.isEmpty
+                    // Render empty state as ListView to preserve pull-to-refresh physics.
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 150),
                           Icon(Icons.search_off, size: 80, color: Colors.grey),
                           SizedBox(height: 16),
-                          Text("No se encontraron reportes con estos filtros.", style: TextStyle(color: Colors.grey, fontSize: 16)),
+                          Text("No se encontraron reportes con estos filtros.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
                         ],
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController, 
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(12),
-                      itemCount: _reportes.length + 1, 
-                      itemBuilder: (context, index) {
-                        
-                        // Render pagination trigger at the end of the list.
-                        if (index == _reportes.length) {
-                          if (!_hayMasDatos) return const SizedBox.shrink();
+                      )
+                    : ListView.builder(
+                        controller: _scrollController, 
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _reportes.length + 1, 
+                        itemBuilder: (context, index) {
                           
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            child: _cargandoMas
-                              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                              : Center(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _cargarMasResultados,
-                                    icon: const Icon(Icons.add, color: Color(0xFF800000)), 
-                                    label: const Text("Cargar más resultados", style: TextStyle(color: Color(0xFF800000))),
-                                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                          // Render pagination trigger at the end of the list.
+                          if (index == _reportes.length) {
+                            if (!_hayMasDatos) return const SizedBox.shrink();
+                            
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: _cargandoMas
+                                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                                : Center(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _cargarMasResultados,
+                                      icon: const Icon(Icons.add, color: Color(0xFF800000)), 
+                                      label: const Text("Cargar más resultados", style: TextStyle(color: Color(0xFF800000))),
+                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                    ),
                                   ),
-                                ),
-                          );
-                        }
-
-                        return TarjetaReporteOptimizada(
-                          reporte: _reportes[index],
-                          onTap: () async {
-                            // Await the modal pop to automatically refresh the feed 
-                            // in case the user edited or deleted the report inside.
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
                             );
-                            _cargarResultados(); 
-                          },
-                        );
-                      },
-                    ),
+                          }
+
+                          return TarjetaReporteOptimizada(
+                            reporte: _reportes[index],
+                            onTap: () async {
+                              // Await the modal pop to automatically refresh the feed 
+                              // in case the user edited or deleted the report inside.
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+                              );
+                              _cargarResultados(); 
+                            },
+                          );
+                        },
+                      ),
+          ),
         ),
       ),
     );

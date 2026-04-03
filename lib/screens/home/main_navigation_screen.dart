@@ -27,9 +27,10 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _indiceActual = 0;
   
-  /// GlobalKey used to delegate hardware keyboard events (like 'Scroll to Top')
-  /// down to the active [HomeScreenState].
+  /// GlobalKeys used to delegate hardware keyboard events (like 'Refresh' or 'Scroll to Top')
+  /// down to the active child states.
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
+  final GlobalKey<ProfileScreenState> _profileKey = GlobalKey<ProfileScreenState>();
 
   String _nombreUsuario = 'Cargando...';
   String _rolUsuario = '';
@@ -183,7 +184,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     int stackIndex = _indiceActual == 3 ? 1 : 0;
     
     // Evaluate hardware platform to apply correct modifier keys (Cmd/Ctrl).
-    final bool isMac = !kIsWeb && Platform.isMacOS;
+    // Includes iOS to prevent simulator hijacking.
+    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
     return PopScope(
       canPop: false,
@@ -195,7 +197,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       // competing for Focus and ensures global hotkeys always register.
       child: CallbackShortcuts(
         bindings: {
-          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isMac, meta: isMac): () {
+          // Centralized Refresh routing
+          SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple): () {
+            if (_indiceActual == 0) {
+              _homeKey.currentState?.cargarReportes();
+            } else if (_indiceActual == 3) {
+              _profileKey.currentState?.cargarPerfilFresco();
+            }
+          },
+          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple): () {
             if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
           },
           const SingleActivator(LogicalKeyboardKey.home): () {
@@ -211,6 +221,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 HomeScreen(key: _homeKey),
                 
                 ProfileScreen(
+                  key: _profileKey, // Injected GlobalKey
                   nombre: _nombreUsuario,
                   rol: _rolUsuario,
                   avatarUrl: _avatarUrl,
