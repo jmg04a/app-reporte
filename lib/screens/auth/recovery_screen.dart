@@ -143,8 +143,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
       if (mounted) {
         _mostrarMensaje("¡Contraseña actualizada con éxito!");
-        // Successfully complete the flow and return to login.
-        Navigator.pop(context); 
+        // Successfully complete the flow and return the email back to login.
+        Navigator.pop(context, _emailController.text.trim()); 
       }
     } on AuthException catch (e) {
       _mostrarMensaje(e.message, esError: true);
@@ -162,6 +162,11 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         title: const Text("Recuperar Cuenta"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
+        // Override back button behavior to pass state backwards
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context, _emailController.text.trim()),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),

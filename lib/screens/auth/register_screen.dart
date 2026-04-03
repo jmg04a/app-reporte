@@ -7,7 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// (full name, student status, and academic major) to be appended 
 /// to the internal `auth.users` raw metadata payload.
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  /// Pre-fills the email input if routed directly from the login screen.
+  final String? initialEmail;
+
+  const RegisterScreen({super.key, this.initialEmail});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -24,6 +27,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   
   bool _isLoading = false;
 
+  /// Toggles the visibility state of the password input fields.
+  bool _obscurePassword = true; 
+
   /// Holds the cached catalog of academic majors fetched from the database.
   List<Map<String, dynamic>> _carreras = []; 
   
@@ -37,6 +43,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void initState() {
     super.initState();
     _cargarCarreras();
+    
+    // UX Optimization: Auto-fill the email if inherited from previous screen.
+    if (widget.initialEmail != null && widget.initialEmail!.isNotEmpty) {
+      _correoController.text = widget.initialEmail!;
+    }
     
     // Attach listener to evaluate input heuristically in real-time.
     _correoController.addListener(_sugerirTipoUsuario);
@@ -162,7 +173,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Pop back to LoginScreen
+                  // Return the typed email back to the login screen
+                  Navigator.pop(context, _correoController.text.trim()); 
                 },
                 child: const Text("Ir al Login"),
               ),
@@ -171,7 +183,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       } else {
         _mostrarMensaje("¡Cuenta creada con éxito!");
-        Navigator.pop(context);
+        // Return the typed email back to the login screen
+        Navigator.pop(context, _correoController.text.trim());
       }
 
     } on AuthException catch (e) {
@@ -190,6 +203,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: const Text("Crear Cuenta"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
+        // Override back button behavior to pass state backwards
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context, _correoController.text.trim()),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -288,23 +306,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               TextField(
                 controller: _passwordController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Contraseña",
-                  prefixIcon: Icon(Icons.lock_outline),
-                  border: OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  // Implementation identical to RecoveryScreen for password visibility
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                 ),
-                obscureText: true,
+                obscureText: _obscurePassword,
               ),
               const SizedBox(height: 15),
 
               TextField(
                 controller: _confirmPasswordController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Confirmar Contraseña",
-                  prefixIcon: Icon(Icons.lock_reset),
-                  border: OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_reset),
+                  border: const OutlineInputBorder(),
+                  // Linked to the same visibility state variable for UX consistency
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                 ),
-                obscureText: true,
+                obscureText: _obscurePassword,
               ),
               const SizedBox(height: 30),
 

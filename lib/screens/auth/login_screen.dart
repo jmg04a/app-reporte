@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 
 /// Handles credential validation via Supabase Auth and implements 
 /// a domain-completion UX strategy for the institutional email.
+/// Automatically synchronizes the email input field with child routes.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -25,6 +26,9 @@ class _LoginScreenState extends State<LoginScreen> {
   static const String _dominio = "@correo.itlalaguna.edu.mx";
 
   bool _isLoading = false;
+
+  /// Toggles the visibility state of the password input field.
+  bool _obscurePassword = true; 
 
   /// Displays transient UI feedback for authentication errors.
   /// 
@@ -147,12 +151,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
               TextField(
                 controller: _passwordController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Contraseña",
-                  prefixIcon: Icon(Icons.lock_outline),
-                  border: OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  border: const OutlineInputBorder(),
+                  // Implementation identical to RecoveryScreen for password visibility
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                 ),
-                obscureText: true,
+                obscureText: _obscurePassword,
               ),
               
               const SizedBox(height: 10),
@@ -161,15 +174,21 @@ class _LoginScreenState extends State<LoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final correoEscrito = _usuarioController.text.trim();
                     
-                    Navigator.push(
+                    // Await the potentially updated email from the RecoveryScreen
+                    final correoRegresado = await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => RecoveryScreen(initialEmail: correoEscrito),
                       ),
                     );
+
+                    // Sync state if the user typed a new email there
+                    if (correoRegresado != null && correoRegresado is String) {
+                      _usuarioController.text = correoRegresado;
+                    }
                   },
                   child: const Text(
                     "¿Olvidaste tu contraseña?",
@@ -198,11 +217,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 15),
                     
                     OutlinedButton(
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        final correoEscrito = _usuarioController.text.trim();
+
+                        // Await the potentially updated email from the RegisterScreen
+                        final correoRegresado = await Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                          MaterialPageRoute(
+                            builder: (context) => RegisterScreen(initialEmail: correoEscrito),
+                          ),
                         );
+
+                        // Sync state if the user typed a new email there
+                        if (correoRegresado != null && correoRegresado is String) {
+                          _usuarioController.text = correoRegresado;
+                        }
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF800000),
