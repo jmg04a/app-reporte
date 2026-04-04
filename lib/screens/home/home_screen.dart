@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'dart:convert'; 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
@@ -39,7 +42,8 @@ class HomeScreen extends StatefulWidget {
 class HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _reportes = [];
   bool _isLoading = true;
-
+  bool _bloqueoRecarga = false;
+  
   /// Pagination configuration.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
@@ -47,6 +51,10 @@ class HomeScreenState extends State<HomeScreen> {
   bool _cargandoMas = false;
 
   final ScrollController _scrollController = ScrollController();
+  
+  /// Explicit Focus node to guarantee global hotkey interception 
+  /// even when the user interacts with the deep ListView.
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
@@ -56,6 +64,7 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -77,14 +86,16 @@ class HomeScreenState extends State<HomeScreen> {
   /// Implements an optimistic UI rendering approach by instantly loading 
   /// stale data from `SharedPreferences` while the fresh data is fetched 
   /// asynchronously in the background.
-  Future<void> cargarReportes() async {
+Future<void> cargarReportes() async {
+    if (_bloqueoRecarga) return; // Si el candado está cerrado, ignoramos el atajo
+    _bloqueoRecarga = true;      // Cerramos el candado al empezar
+
     _rangoInicio = 0;
     _hayMasDatos = true;
 
     final prefs = await SharedPreferences.getInstance();
     final datosGuardados = prefs.getString('reportes_cache');
 
-    // Optimistic UI: Render cached data immediately if available.
     if (datosGuardados != null && _reportes.isEmpty) {
       if (mounted) {
         setState(() {
@@ -98,9 +109,6 @@ class HomeScreenState extends State<HomeScreen> {
 
     try {
       final supabase = Supabase.instance.client;
-      
-      // Performs a complex relational join (Inner Joins) to extract full context 
-      // without needing multiple sequential queries.
       final response = await supabase.from('reportes').select('''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
         cat_categorias (id, nombre, icono, color),
@@ -114,17 +122,17 @@ class HomeScreenState extends State<HomeScreen> {
         setState(() {
           _reportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
-          // Stop pagination if the returned payload is smaller than the requested limit.
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
-        // Override local cache with the fresh dataset.
         prefs.setString('reportes_cache', jsonEncode(response));
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    } finally {
+      // PASE LO QUE PASE, SIEMPRE ABRIMOS EL CANDADO AL TERMINAR
+      _bloqueoRecarga = false; 
     }
   }
-
   /// Fetches the subsequent payload of reports (Pagination).
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
@@ -161,65 +169,79 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: GestureDetector(
-          onTap: scrollToTop,
-          child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-        backgroundColor: const Color(0xFF800000), 
-        foregroundColor: Colors.white,
-      ),
-      body: RefreshIndicator(
-        onRefresh: cargarReportes,
-        color: const Color(0xFF800000),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator()) 
-            : _reportes.isEmpty
-                ? ListView( 
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 150),
-                      Icon(Icons.inbox, size: 80, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
-                    ],
-                  )
-                : ListView.builder(
-                    controller: _scrollController, 
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _reportes.length + 1, 
-                    itemBuilder: (context, index) {
-                      if (index == _reportes.length) {
-                        if (!_hayMasDatos) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: _cargandoMas
-                            ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                            : Center(
-                                child: OutlinedButton.icon(
-                                  onPressed: _cargarMasReportes,
-                                  icon: const Icon(Icons.add, color: Color(0xFF800000)),
-                                  label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
-                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
-                                ),
-                              ),
-                        );
-                      }
+    // Hardware evaluation to apply correct OS-level modifier keys.
+    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
-                      return TarjetaReporteOptimizada(
-                        reporte: _reportes[index],
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+    return CallbackShortcuts(
+      bindings: {
+        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple,includeRepeats: false): cargarReportes,
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple,includeRepeats: false): scrollToTop,
+        const SingleActivator(LogicalKeyboardKey.home,includeRepeats: false): scrollToTop,
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            title: GestureDetector(
+              onTap: scrollToTop,
+              child: const Text("Panel de Reportes", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            backgroundColor: const Color(0xFF800000), 
+            foregroundColor: Colors.white,
+          ),
+          body: RefreshIndicator(
+            onRefresh: cargarReportes,
+            color: const Color(0xFF800000),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000))) 
+                : _reportes.isEmpty
+                    ? ListView( 
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 150),
+                          Icon(Icons.inbox, size: 80, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text("No hay ningún reporte aún.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 16)),
+                        ],
+                      )
+                    : ListView.builder(
+                        controller: _scrollController, 
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _reportes.length + 1, 
+                        itemBuilder: (context, index) {
+                          if (index == _reportes.length) {
+                            if (!_hayMasDatos) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              child: _cargandoMas
+                                ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+                                : Center(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _cargarMasReportes,
+                                      icon: const Icon(Icons.add, color: Color(0xFF800000)),
+                                      label: const Text("Cargar más reportes", style: TextStyle(color: Color(0xFF800000))),
+                                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF800000))),
+                                    ),
+                                  ),
+                            );
+                          }
+
+                          return TarjetaReporteOptimizada(
+                            reporte: _reportes[index],
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => ReportDetailScreen(reporteId: _reportes[index]['id'])),
+                              );
+                              cargarReportes(); 
+                            },
                           );
-                          cargarReportes(); 
                         },
-                      );
-                    },
-                  ),
+                      ),
+          ),
+        ),
       ),
     );
   }

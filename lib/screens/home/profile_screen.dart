@@ -46,6 +46,10 @@ class ProfileScreenState extends State<ProfileScreen> {
   
   String _correoUsuario = '';
 
+  // --- VARIABLES DE CARGA Y PROTECCIÓN ---
+  bool _isLoading = true; 
+  bool _bloqueoRecarga = false;
+
   /// Student-specific metadata states.
   /// If [_esEstudiante] is true, the UI unlocks academic major management.
   bool _esEstudiante = false;
@@ -65,8 +69,13 @@ class ProfileScreenState extends State<ProfileScreen> {
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
 
     // 2. Trigger asynchronous data resolution.
-    _cargarPerfilDesdeCache();
-    cargarPerfilFresco();
+    _inicializarPantalla();
+  }
+
+  /// Orquesta la carga de caché y red.
+  Future<void> _inicializarPantalla() async {
+    await _cargarPerfilDesdeCache();
+    await cargarPerfilFresco();
   }
 
   /// Instantly loads offline-available data from device storage.
@@ -92,6 +101,9 @@ class ProfileScreenState extends State<ProfileScreen> {
           _nombreCarreraActual = perfilCache['carrera_nombre'] ?? 'Sin carrera';
           _numeroControl = perfilCache['numero_control'];
         }
+
+        // Optimistic UI: Si tenemos datos guardados, ocultamos la carga central
+        _isLoading = false; 
       });
     }
   }
@@ -99,6 +111,14 @@ class ProfileScreenState extends State<ProfileScreen> {
   /// Fetches the authoritative user state from the Postgres database.
   /// Public method accessible via GlobalKey for keyboard shortcut invocations.
   Future<void> cargarPerfilFresco() async {
+    if (_bloqueoRecarga) return; // Candado lógico contra spam
+    _bloqueoRecarga = true;
+
+    // Si no tenemos ni caché ni nombre real (primer arranque o sin conexión previa)
+    if (_nombreActual == 'Cargando...' || _nombreActual.isEmpty) {
+      setState(() => _isLoading = true);
+    }
+
     try {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
@@ -143,6 +163,9 @@ class ProfileScreenState extends State<ProfileScreen> {
               _nombreCarreraActual = carreraObj['nombre'];
             }
           }
+
+          // Descarga finalizada
+          _isLoading = false;
         });
 
         // Persist the fresh authoritative payload to local cache.
@@ -160,6 +183,11 @@ class ProfileScreenState extends State<ProfileScreen> {
       }
     } catch (e) {
       debugPrint("Error recargando perfil: $e");
+      if (mounted) setState(() => _isLoading = false);
+    } finally {
+      // Cooldown de 1 segundo para evitar ráfagas del atajo de recarga
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) _bloqueoRecarga = false;
     }
   }
 
@@ -410,6 +438,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
+
   /// Terminates the user session and performs a hard reset of local storage.
   Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(
@@ -463,167 +492,169 @@ class ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
       ),
-      // Pull-to-refresh integration.
+      // Integración visual idéntica a HomeScreen
       body: RefreshIndicator(
         onRefresh: cargarPerfilFresco,
         color: const Color(0xFF800000),
-        child: SingleChildScrollView(
-          // Essential constraint to enable pull-to-refresh gestures.
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              
-              Stack(
-                alignment: Alignment.bottomRight,
+        child: _isLoading 
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+          : SingleChildScrollView(
+              // Essential constraint to enable pull-to-refresh gestures.
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
                 children: [
-                  CircleAvatar(
-                    radius: 70,
-                    backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                    backgroundImage: _currentAvatarUrl != null ? CachedNetworkImageProvider(_currentAvatarUrl!) : null,
-                    child: _isUploading
-                        ? const CircularProgressIndicator(color: Color(0xFF800000))
-                        : _currentAvatarUrl == null 
-                            ? const Icon(Icons.person, size: 70, color: Color(0xFF800000)) 
-                            : null,
+                  const SizedBox(height: 20),
+                  
+                  Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      CircleAvatar(
+                        radius: 70,
+                        backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                        backgroundImage: _currentAvatarUrl != null ? CachedNetworkImageProvider(_currentAvatarUrl!) : null,
+                        child: _isUploading
+                            ? const CircularProgressIndicator(color: Color(0xFF800000))
+                            : _currentAvatarUrl == null 
+                                ? const Icon(Icons.person, size: 70, color: Color(0xFF800000)) 
+                                : null,
+                      ),
+                      if (!_isUploading)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF800000), 
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                              onPressed: _cambiarFoto,
+                              tooltip: "Cambiar foto",
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  if (!_isUploading)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF800000), 
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                          onPressed: _cambiarFoto,
-                          tooltip: "Cambiar foto",
-                        ),
+                  const SizedBox(height: 15),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: widget.rol == 'admin' ? Colors.amber.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: widget.rol == 'admin' ? Colors.amber : Colors.blue)
+                    ),
+                    child: Text(
+                      widget.rol.toUpperCase(),
+                      style: TextStyle(
+                        color: widget.rol == 'admin' ? Colors.orange[800] : Colors.blue[800],
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12
                       ),
                     ),
+                  ),
+                  
+                  const SizedBox(height: 30),
+
+                  TextField(
+                    controller: TextEditingController(text: _nombreActual),
+                    readOnly: true, 
+                    decoration: InputDecoration(
+                      labelText: "Nombre Completo",
+                      prefixIcon: const Icon(Icons.badge, color: Colors.grey),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                        onPressed: _cambiarNombre,
+                        tooltip: "Editar nombre",
+                      ),
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  TextField(
+                    controller: TextEditingController(text: _correoUsuario),
+                    readOnly: true, 
+                    decoration: InputDecoration(
+                      labelText: "Correo Institucional",
+                      prefixIcon: const Icon(Icons.email, color: Colors.grey),
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                  ),
+
+                  if (_esEstudiante) ...[
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: TextEditingController(text: _nombreCarreraActual),
+                      readOnly: true, 
+                      decoration: InputDecoration(
+                        labelText: "Carrera",
+                        prefixIcon: const Icon(Icons.school, color: Colors.grey),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                          onPressed: _cambiarCarrera, 
+                          tooltip: "Cambiar carrera",
+                        ),
+                        border: const OutlineInputBorder(),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 40), 
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const MisReportesScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.list_alt),
+                      label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF800000),
+                        elevation: 0,
+                        side: const BorderSide(color: Color(0xFF800000), width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 15), 
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _cerrarSesion(context),
+                      icon: const Icon(Icons.logout),
+                      label: const Text("CERRAR SESIÓN", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        foregroundColor: Colors.red[700],
+                        elevation: 0,
+                        side: BorderSide(color: Colors.red[200]!),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 15),
-
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: widget.rol == 'admin' ? Colors.amber.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: widget.rol == 'admin' ? Colors.amber : Colors.blue)
-                ),
-                child: Text(
-                  widget.rol.toUpperCase(),
-                  style: TextStyle(
-                    color: widget.rol == 'admin' ? Colors.orange[800] : Colors.blue[800],
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 30),
-
-              TextField(
-                controller: TextEditingController(text: _nombreActual),
-                readOnly: true, 
-                decoration: InputDecoration(
-                  labelText: "Nombre Completo",
-                  prefixIcon: const Icon(Icons.badge, color: Colors.grey),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.edit, color: Color(0xFF800000)),
-                    onPressed: _cambiarNombre,
-                    tooltip: "Editar nombre",
-                  ),
-                  border: const OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                ),
-              ),
-              
-              const SizedBox(height: 20),
-              
-              TextField(
-                controller: TextEditingController(text: _correoUsuario),
-                readOnly: true, 
-                decoration: InputDecoration(
-                  labelText: "Correo Institucional",
-                  prefixIcon: const Icon(Icons.email, color: Colors.grey),
-                  border: const OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                ),
-              ),
-
-              if (_esEstudiante) ...[
-                const SizedBox(height: 20),
-                TextField(
-                  controller: TextEditingController(text: _nombreCarreraActual),
-                  readOnly: true, 
-                  decoration: InputDecoration(
-                    labelText: "Carrera",
-                    prefixIcon: const Icon(Icons.school, color: Colors.grey),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.edit, color: Color(0xFF800000)),
-                      onPressed: _cambiarCarrera, 
-                      tooltip: "Cambiar carrera",
-                    ),
-                    border: const OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.grey[100],
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 40), 
-              
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MisReportesScreen()),
-                    );
-                  },
-                  icon: const Icon(Icons.list_alt),
-                  label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF800000),
-                    elevation: 0,
-                    side: const BorderSide(color: Color(0xFF800000), width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 15), 
-              
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _cerrarSesion(context),
-                  icon: const Icon(Icons.logout),
-                  label: const Text("CERRAR SESIÓN", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red[50],
-                    foregroundColor: Colors.red[700],
-                    elevation: 0,
-                    side: BorderSide(color: Colors.red[200]!),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
       ),
     );
   }

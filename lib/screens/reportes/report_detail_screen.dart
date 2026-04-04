@@ -34,6 +34,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   bool _yaReacciono = false;
   int _contadorReacciones = 0;
 
+  bool _navegandoAEdicion = false;
+
   final List<String> _estadosDisponibles = ['pendiente', 'en proceso', 'resuelto'];
   
   /// Explicit Focus node to guarantee global hotkey interception.
@@ -122,13 +124,24 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   /// Routes to the CreateReportScreen in "Edit Mode" if permissions are met.
   Future<void> _abrirEdicion() async {
+
+    if (_navegandoAEdicion) return;
+
     if (_isCreator && _estadoActual.toLowerCase() == 'pendiente') {
+
+      setState(() => _navegandoAEdicion = true);
+
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => CreateReportScreen(reporteExistente: _reporteCompleto),
         ),
       );
+
+      if (mounted) {
+        setState(() => _navegandoAEdicion = false);
+      }
+
       _cargarDetalles(); 
     }
   }
@@ -168,10 +181,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   /// Toggles the user's reaction to the report.
-  ///
-  /// Implements an Optimistic UI approach: the local state (reaction count and toggle) 
-  /// is mutated immediately before the network request finishes, providing instant 
-  /// feedback. If the network request fails, the state is rolled back in the `catch` block.
   Future<void> _toggleReaccion() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser!.id;
@@ -209,10 +218,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   /// Executes a "Soft Delete" on the report.
-  ///
-  /// Instead of a destructive SQL DELETE, it sets the `visible` flag to false. 
-  /// This maintains referential integrity in the database and preserves historical 
-  /// data for administrative audits while hiding it from the public feeds.
   Future<void> _borrarReporte() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -323,22 +328,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
     
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
-    FocusScope.of(context).requestFocus(_focusNode);
 
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.keyE, control: !isApple, meta: isApple): _abrirEdicion,
+        SingleActivator(LogicalKeyboardKey.keyE, control: !isApple, meta: isApple,includeRepeats: false): _abrirEdicion,
       },
       child: Focus(
         focusNode: _focusNode,
+        autofocus: true, 
         child: Scaffold(
           appBar: AppBar(
             title: const Text("Detalle del Reporte"),
             backgroundColor: const Color(0xFF800000),
             foregroundColor: Colors.white,
             actions: [
-              // Edit permission explicitly constrained to the original creator 
-              // and only when the report is still in 'pending' status.
               if (_isCreator && _estadoActual.toLowerCase() == 'pendiente')
                 IconButton(
                   icon: const Icon(Icons.edit),
@@ -508,11 +511,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             ],
                           ),
                           
-                          // --- Reaction Action Button ---
-                          // Implements frontend RBAC to prevent self-voting.
-                          // If the current user is the creator of the report (_isCreator), 
-                          // the onPressed callback is set to null, implicitly mutating the 
-                          // Material widget state to 'disabled' and preventing API calls.
                           ElevatedButton.icon(
                             onPressed: _isCreator ? null : _toggleReaccion,
                             icon: Icon(
@@ -530,7 +528,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             style: ElevatedButton.styleFrom(
-                              // Dynamic styling based on Optimistic UI state and RBAC status
                               backgroundColor: _yaReacciono ? const Color(0xFF800000) : Colors.white,
                               foregroundColor: _yaReacciono ? Colors.white : const Color(0xFF800000),
                               disabledBackgroundColor: Colors.grey.shade200, 

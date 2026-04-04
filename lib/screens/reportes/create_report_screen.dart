@@ -523,249 +523,246 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple): () {
+        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple,includeRepeats: false): () {
            if (!_isSubmitting) _enviarReporte();
         },
       },
-      child: Focus(
-        autofocus: true, // Enables root level key interception without stealing TextField focus
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(_esEdicion ? "Editar Reporte" : "Nuevo Reporte"),
-            backgroundColor: const Color(0xFF800000),
-            foregroundColor: Colors.white,
-          ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(_esEdicion ? "Corregir detalles" : "¿Qué está fallando?", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                
-                TextField(
-                  controller: _tituloController,
-                  decoration: const InputDecoration(labelText: "Título breve", hintText: "Ej. Proyector no enciende", prefixIcon: Icon(Icons.short_text), border: OutlineInputBorder()),
-                  maxLength: 50,
-                ),
-                const SizedBox(height: 15),
-                
-                DropdownButtonFormField<int>(
-                  initialValue: _selectedCategoriaId,
-                  decoration: const InputDecoration(labelText: "Categoría", prefixIcon: Icon(Icons.category_outlined), border: OutlineInputBorder()),
-                  items: _categorias.map((cat) {
-                    return DropdownMenuItem<int>(
-                      value: cat['id'],
-                      child: Row(
-                        children: [
-                          Icon(_getIconFromName(cat['icono']), color: _getColorFromHex(cat['color'])),
-                          const SizedBox(width: 10),
-                          Text(cat['nombre']),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    setState(() => _selectedCategoriaId = val);
-                    _guardarBorrador(); 
-                  },
-                ),
-                const SizedBox(height: 20),
-                const Divider(),
-                const SizedBox(height: 10),
-                
-                const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 15),
-                
-                Autocomplete<Map<String, dynamic>>(
-                  key: _autocompleteKey, 
-                  initialValue: TextEditingValue(text: _lugarTextoActual), 
-                  optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return const Iterable<Map<String, dynamic>>.empty();
-                    }
-                    final query = textEditingValue.text.toLowerCase();
-                    return _todosLosLugares.where((lugar) =>
-                        lugar['nombreBuscable'].toString().toLowerCase().contains(query));
-                  },
-                  displayStringForOption: (option) => option['nombreBuscable'],
-                  onSelected: (option) {
-                    setState(() {
-                      _selectedLugarId = option['id'];
-                      _errorLugar = null; 
-                    });
-                    _guardarBorrador(); 
-                    FocusScope.of(context).unfocus(); 
-                  },
-                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                    return TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration: InputDecoration(
-                        labelText: "Buscar edificio o aula...",
-                        hintText: "Ej. 19, Sistemas, Aula 3",
-                        prefixIcon: const Icon(Icons.search),
-                        border: const OutlineInputBorder(),
-                        errorText: _errorLugar, 
-                      ),
-                      onChanged: (val) {
-                        _lugarTextoActual = val; 
-                        
-                        if (_selectedLugarId != null) {
-                          setState(() => _selectedLugarId = null); 
-                        }
-                        if (_errorLugar != null) {
-                          setState(() => _errorLugar = null); 
-                        }
-                        _guardarBorrador();
-                      },
-                    );
-                  },
-                  optionsViewBuilder: (context, onSelected, options) {
-                    final anchosCaja = MediaQuery.of(context).size.width - 48; 
-                    
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 8,
-                        borderRadius: BorderRadius.circular(8),
-                        clipBehavior: Clip.antiAlias,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxHeight: 250, maxWidth: anchosCaja),
-                          child: ListView.separated(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            itemCount: options.length,
-                            separatorBuilder: (context, index) => const Divider(height: 1),
-                            itemBuilder: (BuildContext context, int index) {
-                              final option = options.elementAt(index);
-                              final esEdificio = option['padre_nombre'] == '';
-    
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                                  child: Icon(
-                                    esEdificio ? Icons.domain : Icons.meeting_room,
-                                    color: const Color(0xFF800000),
-                                  ),
-                                ),
-                                title: Text(
-                                  option['nombre'], 
-                                  style: const TextStyle(fontWeight: FontWeight.bold)
-                                ),
-                                subtitle: esEdificio
-                                    ? const Text("Zona / Edificio Principal", style: TextStyle(color: Colors.grey, fontSize: 12))
-                                    : Text("Pertenece a: ${option['padre_nombre']}", style: const TextStyle(color: Color(0xFF800000), fontSize: 12)),
-                                onTap: () => onSelected(option),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-    
-                const SizedBox(height: 20),
-                const Divider(),
-                const SizedBox(height: 15),
-                
-                TextField(
-                  controller: _descripcionController,
-                  decoration: const InputDecoration(labelText: "Descripción detallada", border: OutlineInputBorder(), alignLabelWithHint: true),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 20),
-    
-                const Text("Evidencia fotográfica (Opcional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-    
-                InkWell(
-                  onTap: _manejarBotonImagen,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: double.infinity,
-                    constraints: const BoxConstraints(maxHeight: 400),
-                    decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey[400]!), borderRadius: BorderRadius.circular(8)),
-                    child: _imagenSeleccionada != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: kIsWeb
-                                ? Image.network(_imagenSeleccionada!.path, fit: BoxFit.contain)
-                                : Image.file(File(_imagenSeleccionada!.path), fit: BoxFit.contain,cacheWidth: 800,),
-                          )
-                        : (!_eliminoImagenVieja && _imagenViejaUrl != null)
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  imageUrl: _imagenViejaUrl!,
-                                  fit: BoxFit.contain,
-                                  memCacheWidth: 800,
-                                ),
-                              )
-                            : const SizedBox(
-                                height: 150,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.camera_alt_outlined, size: 40, color: Colors.grey),
-                                    SizedBox(height: 8),
-                                    Text("Toca para agregar una foto", style: TextStyle(color: Colors.grey)),
-                                  ],
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_esEdicion ? "Editar Reporte" : "Nuevo Reporte"),
+          backgroundColor: const Color(0xFF800000),
+          foregroundColor: Colors.white,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_esEdicion ? "Corregir detalles" : "¿Qué está fallando?", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              
+              TextField(
+                controller: _tituloController,
+                decoration: const InputDecoration(labelText: "Título breve", hintText: "Ej. Proyector no enciende", prefixIcon: Icon(Icons.short_text), border: OutlineInputBorder()),
+                maxLength: 50,
+              ),
+              const SizedBox(height: 15),
+              
+              DropdownButtonFormField<int>(
+                initialValue: _selectedCategoriaId,
+                decoration: const InputDecoration(labelText: "Categoría", prefixIcon: Icon(Icons.category_outlined), border: OutlineInputBorder()),
+                items: _categorias.map((cat) {
+                  return DropdownMenuItem<int>(
+                    value: cat['id'],
+                    child: Row(
+                      children: [
+                        Icon(_getIconFromName(cat['icono']), color: _getColorFromHex(cat['color'])),
+                        const SizedBox(width: 10),
+                        Text(cat['nombre']),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  setState(() => _selectedCategoriaId = val);
+                  _guardarBorrador(); 
+                },
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 10),
+              
+              const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              
+              Autocomplete<Map<String, dynamic>>(
+                key: _autocompleteKey, 
+                initialValue: TextEditingValue(text: _lugarTextoActual), 
+                optionsBuilder: (TextEditingValue textEditingValue) {
+                  if (textEditingValue.text.isEmpty) {
+                    return const Iterable<Map<String, dynamic>>.empty();
+                  }
+                  final query = textEditingValue.text.toLowerCase();
+                  return _todosLosLugares.where((lugar) =>
+                      lugar['nombreBuscable'].toString().toLowerCase().contains(query));
+                },
+                displayStringForOption: (option) => option['nombreBuscable'],
+                onSelected: (option) {
+                  setState(() {
+                    _selectedLugarId = option['id'];
+                    _errorLugar = null; 
+                  });
+                  _guardarBorrador(); 
+                  FocusScope.of(context).unfocus(); 
+                },
+                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: InputDecoration(
+                      labelText: "Buscar edificio o aula...",
+                      hintText: "Ej. 19, Sistemas, Aula 3",
+                      prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
+                      errorText: _errorLugar, 
+                    ),
+                    onChanged: (val) {
+                      _lugarTextoActual = val; 
+                      
+                      if (_selectedLugarId != null) {
+                        setState(() => _selectedLugarId = null); 
+                      }
+                      if (_errorLugar != null) {
+                        setState(() => _errorLugar = null); 
+                      }
+                      _guardarBorrador();
+                    },
+                  );
+                },
+                optionsViewBuilder: (context, onSelected, options) {
+                  final anchosCaja = MediaQuery.of(context).size.width - 48; 
+                  
+                  return Align(
+                    alignment: Alignment.topLeft,
+                    child: Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(8),
+                      clipBehavior: Clip.antiAlias,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: 250, maxWidth: anchosCaja),
+                        child: ListView.separated(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          itemCount: options.length,
+                          separatorBuilder: (context, index) => const Divider(height: 1),
+                          itemBuilder: (BuildContext context, int index) {
+                            final option = options.elementAt(index);
+                            final esEdificio = option['padre_nombre'] == '';
+  
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                                child: Icon(
+                                  esEdificio ? Icons.domain : Icons.meeting_room,
+                                  color: const Color(0xFF800000),
                                 ),
                               ),
-                  ),
-                ),
-    
-                if (_imagenSeleccionada != null || (!_eliminoImagenVieja && _imagenViejaUrl != null))
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => setState(() {
-                        _imagenSeleccionada = null;
-                        _eliminoImagenVieja = true;
-                      }),
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                      label: const Text("Quitar foto", style: TextStyle(color: Colors.red)),
-                    ),
-                  ),
-                const SizedBox(height: 30),
-    
-                if (_isSubmitting)
-                  const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF800000),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: Icon(_esEdicion ? Icons.save : Icons.send),
-                          label: Text(_esEdicion ? "ACTUALIZAR REPORTE" : "ENVIAR REPORTE", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          onPressed: _enviarReporte,
+                              title: Text(
+                                option['nombre'], 
+                                style: const TextStyle(fontWeight: FontWeight.bold)
+                              ),
+                              subtitle: esEdificio
+                                  ? const Text("Zona / Edificio Principal", style: TextStyle(color: Colors.grey, fontSize: 12))
+                                  : Text("Pertenece a: ${option['padre_nombre']}", style: const TextStyle(color: Color(0xFF800000), fontSize: 12)),
+                              onTap: () => onSelected(option),
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton(
+                    ),
+                  );
+                },
+              ),
+  
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 15),
+              
+              TextField(
+                controller: _descripcionController,
+                decoration: const InputDecoration(labelText: "Descripción detallada", border: OutlineInputBorder(), alignLabelWithHint: true),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 20),
+  
+              const Text("Evidencia fotográfica (Opcional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+  
+              InkWell(
+                onTap: _manejarBotonImagen,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 400),
+                  decoration: BoxDecoration(color: Colors.grey[200], border: Border.all(color: Colors.grey[400]!), borderRadius: BorderRadius.circular(8)),
+                  child: _imagenSeleccionada != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: kIsWeb
+                              ? Image.network(_imagenSeleccionada!.path, fit: BoxFit.contain)
+                              : Image.file(File(_imagenSeleccionada!.path), fit: BoxFit.contain,cacheWidth: 800,),
+                        )
+                      : (!_eliminoImagenVieja && _imagenViejaUrl != null)
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(
+                                imageUrl: _imagenViejaUrl!,
+                                fit: BoxFit.contain,
+                                memCacheWidth: 800,
+                              ),
+                            )
+                          : const SizedBox(
+                              height: 150,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.camera_alt_outlined, size: 40, color: Colors.grey),
+                                  SizedBox(height: 8),
+                                  Text("Toca para agregar una foto", style: TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            ),
+                ),
+              ),
+  
+              if (_imagenSeleccionada != null || (!_eliminoImagenVieja && _imagenViejaUrl != null))
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() {
+                      _imagenSeleccionada = null;
+                      _eliminoImagenVieja = true;
+                    }),
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                    label: const Text("Quitar foto", style: TextStyle(color: Colors.red)),
+                  ),
+                ),
+              const SizedBox(height: 30),
+  
+              if (_isSubmitting)
+                const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[50],
-                          foregroundColor: Colors.red,
-                          elevation: 0,
-                          side: BorderSide(color: Colors.red[200]!),
+                          backgroundColor: const Color(0xFF800000),
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: _limpiarBorrador,
-                        child: const Icon(Icons.close), 
+                        icon: Icon(_esEdicion ? Icons.save : Icons.send),
+                        label: Text(_esEdicion ? "ACTUALIZAR REPORTE" : "ENVIAR REPORTE", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        onPressed: _enviarReporte,
                       ),
-                    ],
-                  ),
-              ],
-            ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        foregroundColor: Colors.red,
+                        elevation: 0,
+                        side: BorderSide(color: Colors.red[200]!),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: _limpiarBorrador,
+                      child: const Icon(Icons.close), 
+                    ),
+                  ],
+                ),
+            ],
           ),
         ),
       ),

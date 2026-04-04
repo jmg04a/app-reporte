@@ -21,16 +21,17 @@ class MisReportesScreen extends StatefulWidget {
 class _MisReportesScreenState extends State<MisReportesScreen> {
   List<Map<String, dynamic>> _misReportes = [];
   bool _isLoading = true;
+  bool _bloqueoRecarga = false;
 
-  /// Pagination configuration parameters.
+    /// Pagination configuration parameters.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
   final ScrollController _scrollController = ScrollController();
-  
-  /// Explicit Focus node to guarantee global hotkey interception on pushed routes.
+
+    /// Explicit Focus node to guarantee global hotkey interception on pushed routes.
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -49,6 +50,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
   /// Smoothly animates the list back to the top offset.
   /// 
   /// Bound to hardware keyboard shortcuts (ArrowUp / Home) via [CallbackShortcuts].
+  
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -59,8 +61,10 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     }
   }
 
-  /// Fetches the initial payload of the user's personal reports.
   Future<void> _cargarMisReportes() async {
+    if (_bloqueoRecarga) return;
+    _bloqueoRecarga = true;
+
     setState(() => _isLoading = true);
     _rangoInicio = 0;
     _hayMasDatos = true;
@@ -93,6 +97,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     } catch (e) {
       debugPrint("Error al cargar mis reportes: $e");
       if (mounted) setState(() => _isLoading = false);
+    }finally {
+      _bloqueoRecarga = false; // Abrimos el candado
     }
   }
 
@@ -139,17 +145,15 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     // Hardware evaluation to apply correct OS-level modifier keys.
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
-    // Assert visual focus to enable keyboard shortcut interception.
-    FocusScope.of(context).requestFocus(_focusNode);
-
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple): _cargarMisReportes,
-        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple): _scrollToTop,
-        const SingleActivator(LogicalKeyboardKey.home): _scrollToTop,
+        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple,includeRepeats: false): _cargarMisReportes,
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple,includeRepeats: false): _scrollToTop,
+        const SingleActivator(LogicalKeyboardKey.home,includeRepeats: false): _scrollToTop,
       },
       child: Focus(
         focusNode: _focusNode,
+        autofocus: true,
         child: Scaffold(
           appBar: AppBar(
             title: GestureDetector(
@@ -165,7 +169,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
                 : _misReportes.isEmpty
-                    // Render empty state as ListView to preserve pull-to-refresh physics.
+                // Render empty state as ListView to preserve pull-to-refresh physics.
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         children: const [

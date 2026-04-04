@@ -101,34 +101,34 @@ class MyApp extends StatelessWidget {
         },
 
         // Trigger global search view.
-        SingleActivator(LogicalKeyboardKey.keyF, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.keyF, control: !isMac, meta: isMac,includeRepeats: false): () {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
-        SingleActivator(LogicalKeyboardKey.keyK, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.keyK, control: !isMac, meta: isMac,includeRepeats: false): () {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
 
         // Trigger report creation view.
-        SingleActivator(LogicalKeyboardKey.keyN, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.keyN, control: !isMac, meta: isMac,includeRepeats: false): () {
           _abrirPantallaGlobal('/crear_reporte', const CreateReportScreen());
         },
 
         // Navigate to root stack (Home).
-        SingleActivator(LogicalKeyboardKey.keyH, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.keyH, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst); 
           globalTabIndex.value = 0; 
         },
-        SingleActivator(LogicalKeyboardKey.digit1, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.digit1, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 0; 
         },
 
         // Navigate to root stack (Profile).
-        SingleActivator(LogicalKeyboardKey.keyP, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.keyP, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 3; 
         },
-        SingleActivator(LogicalKeyboardKey.comma, control: !isMac, meta: isMac): () {
+        SingleActivator(LogicalKeyboardKey.comma, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 3; 
         },

@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:internet_connection_checker_plus/internet_connection_checker_plus.dart';
-
 import '../../main.dart'; 
 import '../reportes/filter_screen.dart'; 
 import 'home_screen.dart';
@@ -198,17 +197,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: CallbackShortcuts(
         bindings: {
           // Centralized Refresh routing
-          SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple): () {
+          SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple,includeRepeats: false): () {
             if (_indiceActual == 0) {
               _homeKey.currentState?.cargarReportes();
             } else if (_indiceActual == 3) {
               _profileKey.currentState?.cargarPerfilFresco();
             }
           },
-          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple): () {
+          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple,includeRepeats: false): () {
             if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
           },
-          const SingleActivator(LogicalKeyboardKey.home): () {
+          const SingleActivator(LogicalKeyboardKey.home,includeRepeats: false): () {
             if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
           },
         },
