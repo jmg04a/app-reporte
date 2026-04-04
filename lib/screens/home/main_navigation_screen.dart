@@ -51,9 +51,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // Sync local navigation state with global keyboard shortcut events.
     globalTabIndex.addListener(() {
       if (mounted && (globalTabIndex.value == 0 || globalTabIndex.value == 3)) {
-        setState(() {
-          _indiceActual = globalTabIndex.value;
-        });
+        _cambiarPestana(globalTabIndex.value); // Cambiado a la nueva función centralizada
       }
     });
   }
@@ -62,6 +60,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void dispose() {
     _suscripcionInternet.cancel(); // Evita fugas de memoria
     super.dispose();
+  }
+
+  // --- NUEVA FUNCIÓN DIRECTORA ---
+  void _cambiarPestana(int nuevoIndice) {
+    setState(() => _indiceActual = nuevoIndice);
+    globalTabIndex.value = nuevoIndice;
+
+    // Esperamos a que Flutter termine de dibujar el cambio de pestaña y luego delegamos el foco
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (nuevoIndice == 0) {
+        _homeKey.currentState?.pedirFoco();
+      } else if (nuevoIndice == 3) {
+        _profileKey.currentState?.pedirFoco();
+      }
+    });
   }
 
   /// Lógica del Banner de Conexión
@@ -182,107 +195,75 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // Maps the 4-item NavigationBar index to the 2-item IndexedStack.
     int stackIndex = _indiceActual == 3 ? 1 : 0;
     
-    // Evaluate hardware platform to apply correct modifier keys (Cmd/Ctrl).
-    // Includes iOS to prevent simulator hijacking.
-    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) async {
         if (didPop) return;
         await _salirDeLaApp();
       },
-      // Root-level keyboard event listener. Prevents child screens from
-      // competing for Focus and ensures global hotkeys always register.
-      child: CallbackShortcuts(
-        bindings: {
-          // Centralized Refresh routing
-          SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple,includeRepeats: false): () {
-            if (_indiceActual == 0) {
+      child: Scaffold(
+        body: IndexedStack(
+          index: stackIndex,
+          children: [
+            HomeScreen(key: _homeKey),
+            ProfileScreen(
+              key: _profileKey, 
+              nombre: _nombreUsuario,
+              rol: _rolUsuario,
+              avatarUrl: _avatarUrl,
+              onNombreCambiado: (nuevoNombre) {
+                setState(() => _nombreUsuario = nuevoNombre);
+              },
+              onAvatarCambiado: (nuevaUrl) {
+                setState(() => _avatarUrl = nuevaUrl);
+              },
+            ),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _indiceActual,
+          onDestinationSelected: (int index) async {
+            if (index == 1) {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FilterScreen()),
+              );
+              _cambiarPestana(_indiceActual); // Recuperar foco en pestaña actual
+            } else if (index == 2) {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CreateReportScreen()),
+              );
               _homeKey.currentState?.cargarReportes();
-            } else if (_indiceActual == 3) {
-              _profileKey.currentState?.cargarPerfilFresco();
+              _cambiarPestana(0); // Volver al Home y pedir foco
+            } else {
+              _cambiarPestana(index); // Cambio de pestaña normal
             }
           },
-          SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple,includeRepeats: false): () {
-            if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
-          },
-          const SingleActivator(LogicalKeyboardKey.home,includeRepeats: false): () {
-            if (_indiceActual == 0) _homeKey.currentState?.scrollToTop();
-          },
-        },
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            body: IndexedStack(
-              index: stackIndex,
-              children: [
-                HomeScreen(key: _homeKey),
-                
-                ProfileScreen(
-                  key: _profileKey, // Injected GlobalKey
-                  nombre: _nombreUsuario,
-                  rol: _rolUsuario,
-                  avatarUrl: _avatarUrl,
-                  onNombreCambiado: (nuevoNombre) {
-                    setState(() => _nombreUsuario = nuevoNombre);
-                  },
-                  onAvatarCambiado: (nuevaUrl) {
-                    setState(() => _avatarUrl = nuevaUrl);
-                  },
-                ),
-              ],
+          backgroundColor: Colors.white,
+          indicatorColor: const Color(0xFF800000).withValues(alpha: 0.2),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home, color: Color(0xFF800000)),
+              label: 'Inicio',
             ),
-            bottomNavigationBar: NavigationBar(
-              selectedIndex: _indiceActual,
-              onDestinationSelected: (int index) async {
-                if (index == 1) {
-                  // Push imperative route over the shell for search view.
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const FilterScreen()),
-                  );
-                } else if (index == 2) {
-                  // Push imperative route for creation, awaiting its pop to refresh the feed.
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CreateReportScreen()),
-                  );
-                  _homeKey.currentState?.cargarReportes();
-                  
-                  setState(() => _indiceActual = 0);
-                  globalTabIndex.value = 0; 
-                } else {
-                  setState(() => _indiceActual = index);
-                  globalTabIndex.value = index; 
-                }
-              },
-              backgroundColor: Colors.white,
-              indicatorColor: const Color(0xFF800000).withValues(alpha: 0.2),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home, color: Color(0xFF800000)),
-                  label: 'Inicio',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.search_outlined),
-                  selectedIcon: Icon(Icons.search, color: Color(0xFF800000)),
-                  label: 'Buscar',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.add),
-                  selectedIcon: Icon(Icons.add_circle, color: Color(0xFF800000)),
-                  label: 'Reportar',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person, color: Color(0xFF800000)),
-                  label: 'Perfil',
-                ),
-              ],
+            NavigationDestination(
+              icon: Icon(Icons.search_outlined),
+              selectedIcon: Icon(Icons.search, color: Color(0xFF800000)),
+              label: 'Buscar',
             ),
-          ),
+            NavigationDestination(
+              icon: Icon(Icons.add),
+              selectedIcon: Icon(Icons.add_circle, color: Color(0xFF800000)),
+              label: 'Reportar',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person, color: Color(0xFF800000)),
+              label: 'Perfil',
+            ),
+          ],
         ),
       ),
     );

@@ -9,11 +9,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
-/// Singleton configuration for global image caching.
-///
-/// Implements `flutter_cache_manager` with a custom SQLite repository to 
-/// prevent storage leaks. Images older than 7 days or exceeding the 50 
-/// object limit are automatically purged from the device's file system.
 class GestorCacheReportes {
   static const key = 'reportesCacheKey';
   
@@ -28,49 +23,59 @@ class GestorCacheReportes {
   );
 }
 
-/// Main feed displaying the global list of reports.
-///
-/// Implements pagination (infinite scrolling) and local caching to optimize
-/// network bandwidth and memory footprint.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  // AGREGAMOS EL OBSERVER AQUÍ
   State<HomeScreen> createState() => HomeScreenState(); 
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _reportes = [];
   bool _isLoading = true;
   bool _bloqueoRecarga = false;
   
-  /// Pagination configuration.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
   bool _cargandoMas = false;
 
   final ScrollController _scrollController = ScrollController();
-  
-  /// Explicit Focus node to guarantee global hotkey interception 
-  /// even when the user interacts with the deep ListView.
   final FocusNode _focusNode = FocusNode();
+
+  // Agrega esto en HomeScreenState y ProfileScreenState
+  void pedirFoco() {
+    if (mounted && !_focusNode.hasFocus) {
+      _focusNode.requestFocus();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // Conectamos el observador
     cargarReportes(); 
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // Desconectamos el observador
     _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Exposed method to allow parent wrappers (like MainNavigationScreen) 
-  /// to trigger a scroll-to-top animation via global keyboard shortcuts.
+  // ESTA FUNCIÓN RECUPERA EL TECLADO CUANDO REGRESAS A LA APP
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_focusNode.hasFocus) {
+        FocusScope.of(context).requestFocus(_focusNode);
+      }
+    }
+  }
+
   void scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -81,14 +86,9 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Fetches the initial payload of reports from Supabase.
-  ///
-  /// Implements an optimistic UI rendering approach by instantly loading 
-  /// stale data from `SharedPreferences` while the fresh data is fetched 
-  /// asynchronously in the background.
-Future<void> cargarReportes() async {
-    if (_bloqueoRecarga) return; // Si el candado está cerrado, ignoramos el atajo
-    _bloqueoRecarga = true;      // Cerramos el candado al empezar
+  Future<void> cargarReportes() async {
+    if (_bloqueoRecarga) return; 
+    _bloqueoRecarga = true;      
 
     _rangoInicio = 0;
     _hayMasDatos = true;
@@ -129,11 +129,11 @@ Future<void> cargarReportes() async {
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     } finally {
-      // PASE LO QUE PASE, SIEMPRE ABRIMOS EL CANDADO AL TERMINAR
-      _bloqueoRecarga = false; 
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) _bloqueoRecarga = false; 
     }
   }
-  /// Fetches the subsequent payload of reports (Pagination).
+
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
 
@@ -169,14 +169,13 @@ Future<void> cargarReportes() async {
 
   @override
   Widget build(BuildContext context) {
-    // Hardware evaluation to apply correct OS-level modifier keys.
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple,includeRepeats: false): cargarReportes,
-        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple,includeRepeats: false): scrollToTop,
-        const SingleActivator(LogicalKeyboardKey.home,includeRepeats: false): scrollToTop,
+        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple, includeRepeats: false): cargarReportes,
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple, includeRepeats: false): scrollToTop,
+        const SingleActivator(LogicalKeyboardKey.home, includeRepeats: false): scrollToTop,
       },
       child: Focus(
         focusNode: _focusNode,
@@ -247,11 +246,6 @@ Future<void> cargarReportes() async {
   }
 }
 
-/// Extracted presentation widget for individual reports.
-///
-/// Declared as an independent Stateless widget to enforce `const` rendering 
-/// where possible, reducing the build scope and freeing up the UI thread 
-/// from deep tree traversal.
 class TarjetaReporteOptimizada extends StatelessWidget {
   final Map<String, dynamic> reporte;
   final VoidCallback onTap;
@@ -262,8 +256,6 @@ class TarjetaReporteOptimizada extends StatelessWidget {
     required this.onTap,
   });
 
-  /// In-memory memoization map for parsed hex colors to avoid repetitive 
-  /// string parsing operations during deep scrolling.
   static final Map<String, Color> _colorCache = {};
 
   static Color _getColorFromHex(String? hexColor) {
@@ -398,7 +390,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
                       cacheManager: GestorCacheReportes.instance, 
-                      memCacheWidth: 150, // Critical for RAM usage prevention
+                      memCacheWidth: 150, 
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,
                       imageBuilder: (context, imageProvider) => Container(

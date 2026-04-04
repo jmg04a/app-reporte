@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Importado para atajos de teclado
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
@@ -10,17 +11,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart'; 
 import 'package:image/image.dart' as img;
 
-/// User profile management interface.
-///
-/// Implements an Optimistic UI pattern: it immediately renders cached data 
-/// via [SharedPreferences] to ensure 0-second loading times, while 
-/// asynchronously fetching fresh metadata from the Supabase backend.
 class ProfileScreen extends StatefulWidget {
   final String nombre;
   final String rol; 
   final String? avatarUrl;
   
-  /// Callbacks to notify the parent shell ([MainNavigationScreen]) of state mutations.
   final Function(String)? onNombreCambiado; 
   final Function(String)? onAvatarCambiado;
 
@@ -34,11 +29,11 @@ class ProfileScreen extends StatefulWidget {
   });
 
   @override
-  // Exposed state to allow GlobalKey method invocations from MainNavigationScreen.
+  // AGREGAMOS EL OBSERVER AQUÍ
   State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class ProfileScreenState extends State<ProfileScreen> {
+class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserver {
   String? _currentAvatarUrl;
   String _nombreActual = ''; 
   bool _isUploading = false;
@@ -46,39 +41,72 @@ class ProfileScreenState extends State<ProfileScreen> {
   
   String _correoUsuario = '';
 
-  // --- VARIABLES DE CARGA Y PROTECCIÓN ---
   bool _isLoading = true; 
   bool _bloqueoRecarga = false;
 
-  /// Student-specific metadata states.
-  /// If [_esEstudiante] is true, the UI unlocks academic major management.
   bool _esEstudiante = false;
   String? _numeroControl;
   int? _carreraIdActual;
   String _nombreCarreraActual = 'Cargando carrera...';
   List<Map<String, dynamic>> _carreras = [];
 
+  // CONTROLADORES FALTANTES AGREGADOS
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
+
+  // Agrega esto en HomeScreenState y ProfileScreenState
+  void pedirFoco() {
+    if (mounted && !_focusNode.hasFocus) {
+      _focusNode.requestFocus();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    // 1. Inherit initial state from parent shell.
+    WidgetsBinding.instance.addObserver(this); // Conectamos el observador
     _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
     final usuarioActual = Supabase.instance.client.auth.currentUser;
     _correoUsuario = usuarioActual?.email ?? 'Correo no disponible';
 
-    // 2. Trigger asynchronous data resolution.
     _inicializarPantalla();
   }
 
-  /// Orquesta la carga de caché y red.
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // Desconectamos el observador
+    _focusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // ESTA FUNCIÓN RECUPERA EL TECLADO CUANDO REGRESAS A LA APP
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_focusNode.hasFocus) {
+        FocusScope.of(context).requestFocus(_focusNode);
+      }
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0, 
+        duration: const Duration(milliseconds: 600), 
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   Future<void> _inicializarPantalla() async {
     await _cargarPerfilDesdeCache();
     await cargarPerfilFresco();
   }
 
-  /// Instantly loads offline-available data from device storage.
   Future<void> _cargarPerfilDesdeCache() async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -94,7 +122,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         if (perfilCache['nombre'] != null) _nombreActual = perfilCache['nombre'];
         if (perfilCache['avatar_url'] != null) _currentAvatarUrl = perfilCache['avatar_url'];
         
-        // Hydrate student context if present in the cached payload.
         if (perfilCache['carrera_id'] != null) {
           _esEstudiante = true;
           _carreraIdActual = perfilCache['carrera_id'];
@@ -102,19 +129,15 @@ class ProfileScreenState extends State<ProfileScreen> {
           _numeroControl = perfilCache['numero_control'];
         }
 
-        // Optimistic UI: Si tenemos datos guardados, ocultamos la carga central
         _isLoading = false; 
       });
     }
   }
 
-  /// Fetches the authoritative user state from the Postgres database.
-  /// Public method accessible via GlobalKey for keyboard shortcut invocations.
   Future<void> cargarPerfilFresco() async {
-    if (_bloqueoRecarga) return; // Candado lógico contra spam
+    if (_bloqueoRecarga) return; 
     _bloqueoRecarga = true;
 
-    // Si no tenemos ni caché ni nombre real (primer arranque o sin conexión previa)
     if (_nombreActual == 'Cargando...' || _nombreActual.isEmpty) {
       setState(() => _isLoading = true);
     }
@@ -123,7 +146,6 @@ class ProfileScreenState extends State<ProfileScreen> {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
       
-      // Update local dictionary of academic majors.
       final carrerasData = await supabase.from('cat_carreras').select('id, nombre').order('nombre');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('carreras_cache', jsonEncode(carrerasData));
@@ -132,8 +154,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         setState(() => _carreras = List<Map<String, dynamic>>.from(carrerasData));
       }
 
-      // Perform an inner join between 'perfiles' and 'estudiantes' to 
-      // fetch extended role-based metadata in a single network request.
       final data = await supabase
           .from('perfiles')
           .select('nombre, avatar_url, estudiantes(numero_control, carrera_id)')
@@ -145,7 +165,6 @@ class ProfileScreenState extends State<ProfileScreen> {
           _nombreActual = data['nombre'] ?? _nombreActual;
           if (data['avatar_url'] != null) _currentAvatarUrl = data['avatar_url']; 
 
-          // Evaluate the relational payload to determine student privileges.
           if (data['estudiantes'] != null) {
             var estData = data['estudiantes'];
             if (estData is List && estData.isNotEmpty) estData = estData[0];
@@ -155,7 +174,6 @@ class ProfileScreenState extends State<ProfileScreen> {
               _numeroControl = estData['numero_control'];
               _carreraIdActual = estData['carrera_id'];
               
-              // Map the foreign key to its human-readable label.
               final carreraObj = _carreras.firstWhere(
                 (c) => c['id'] == _carreraIdActual, 
                 orElse: () => {'nombre': 'Carrera no asignada o borrada'}
@@ -164,11 +182,9 @@ class ProfileScreenState extends State<ProfileScreen> {
             }
           }
 
-          // Descarga finalizada
           _isLoading = false;
         });
 
-        // Persist the fresh authoritative payload to local cache.
         final perfilStr = prefs.getString('usuario_perfil');
         Map<String, dynamic> perfilCache = perfilStr != null ? jsonDecode(perfilStr) : {};
         
@@ -185,13 +201,11 @@ class ProfileScreenState extends State<ProfileScreen> {
       debugPrint("Error recargando perfil: $e");
       if (mounted) setState(() => _isLoading = false);
     } finally {
-      // Cooldown de 1 segundo para evitar ráfagas del atajo de recarga
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) _bloqueoRecarga = false;
     }
   }
 
-  /// Mutates the academic major (foreign key) for student accounts.
   Future<void> _cambiarCarrera() async {
     if (_carreras.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cargando catálogo de carreras, espera un segundo...")));
@@ -237,7 +251,6 @@ class ProfileScreenState extends State<ProfileScreen> {
       try {
         final supabase = Supabase.instance.client;
         
-        // Mutate the related record in the 'estudiantes' table.
         await supabase
             .from('estudiantes')
             .update({'carrera_id': nuevaCarreraId})
@@ -253,7 +266,6 @@ class ProfileScreenState extends State<ProfileScreen> {
           _nombreCarreraActual = nuevaCarreraNombre;
         });
 
-        // Sync local cache with the new mutation.
         final prefs = await SharedPreferences.getInstance();
         final perfilStr = prefs.getString('usuario_perfil');
         if (perfilStr != null) {
@@ -274,7 +286,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// Mutates the user's full name.
   Future<void> _cambiarNombre() async {
     final controller = TextEditingController(text: _nombreActual);
     
@@ -318,7 +329,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
         setState(() => _nombreActual = nuevoNombre);
         
-        // Sync cache.
         final prefs = await SharedPreferences.getInstance();
         final perfilStr = prefs.getString('usuario_perfil');
         if (perfilStr != null) {
@@ -329,7 +339,6 @@ class ProfileScreenState extends State<ProfileScreen> {
           await prefs.setString('usuario_perfil', jsonEncode({'nombre': nuevoNombre}));
         }
 
-        // Notify parent shell to update global UI.
         if (widget.onNombreCambiado != null) {
           widget.onNombreCambiado!(nuevoNombre);
         }
@@ -349,10 +358,8 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-/// Uploads a new avatar to Supabase Storage and updates the profile record.
   Future<void> _cambiarFoto() async {
     try {
-      // Pedimos la imagen a la galería y dejamos que iOS/Android compriman por defecto
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (image == null) return; 
 
@@ -361,29 +368,20 @@ class ProfileScreenState extends State<ProfileScreen> {
       final supabase = Supabase.instance.client;
       final userId = supabase.auth.currentUser!.id;
       
-      // Forzamos la extensión a JPG
       final nombreArchivo = 'avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final rutaArchivo = '$userId/$nombreArchivo';
 
-      // Leemos los bytes crudos
       Uint8List imageBytes = await image.readAsBytes();
 
-      // 🛑 COMPRESIÓN MANUAL (Solo para Escritorio: Mac, Windows, Linux)
       if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-        // Decodificamos el mapa de bits
         img.Image? imagenOriginal = img.decodeImage(imageBytes);
         
         if (imagenOriginal != null) {
-          // Achicamos a 500px (ideal para avatares, ahorra aún más espacio que los 1080px)
           img.Image imagenAchicada = img.copyResize(imagenOriginal, width: 540);
-          
-          // Re-escribimos la variable con los nuevos bytes comprimidos
           imageBytes = Uint8List.fromList(img.encodeJpg(imagenAchicada, quality: 70));
         }
       }
 
-      // Subimos los bytes (ya sean los del celular o los comprimidos en PC)
-      // Upsert: Replaces the previous file to save storage space.
       await supabase.storage.from('avatars').uploadBinary(
             rutaArchivo,
             imageBytes,
@@ -398,7 +396,6 @@ class ProfileScreenState extends State<ProfileScreen> {
 
       await supabase.from('perfiles').update({'avatar_url': imageUrl}).eq('id', userId);
 
-      // Invalidate specific image cache to force UI refresh.
       await CachedNetworkImage.evictFromCache(imageUrl);
 
       if (!mounted) return;
@@ -408,7 +405,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         _isUploading = false;
       });
 
-      // Sync cache.
       final prefs = await SharedPreferences.getInstance();
       final perfilStr = prefs.getString('usuario_perfil');
       if (perfilStr != null) {
@@ -419,7 +415,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         await prefs.setString('usuario_perfil', jsonEncode({'avatar_url': imageUrl}));
       }
 
-      // Notify parent shell.
       if (widget.onAvatarCambiado != null) {
         widget.onAvatarCambiado!(imageUrl);
       }
@@ -439,7 +434,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// Terminates the user session and performs a hard reset of local storage.
   Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -461,7 +455,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirmar == true) {
-      // Purge sensitive and user-specific data from SharedPreferences.
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('usuario_perfil'); 
       await prefs.remove('reportes_cache'); 
@@ -474,7 +467,6 @@ class ProfileScreenState extends State<ProfileScreen> {
       }
 
       if (context.mounted) {
-        // Unmount the entire application tree and route back to Login.
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -486,175 +478,191 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Mi Perfil"),
-        backgroundColor: const Color(0xFF800000),
-        foregroundColor: Colors.white,
-      ),
-      // Integración visual idéntica a HomeScreen
-      body: RefreshIndicator(
-        onRefresh: cargarPerfilFresco,
-        color: const Color(0xFF800000),
-        child: _isLoading 
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
-          : SingleChildScrollView(
-              // Essential constraint to enable pull-to-refresh gestures.
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  
-                  Stack(
-                    alignment: Alignment.bottomRight,
+    final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
+
+    // ENVOLVEMOS EL SCAFFOLD PARA CAPTURAR LOS ATAJOS
+    return CallbackShortcuts(
+      bindings: {
+        SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple, includeRepeats: false): cargarPerfilFresco,
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: !isApple, meta: isApple, includeRepeats: false): _scrollToTop,
+        const SingleActivator(LogicalKeyboardKey.home, includeRepeats: false): _scrollToTop,
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        child: Scaffold(
+          appBar: AppBar(
+            title: GestureDetector(
+              onTap: _scrollToTop,
+              child: const Text("Mi Perfil"),
+            ),
+            backgroundColor: const Color(0xFF800000),
+            foregroundColor: Colors.white,
+          ),
+          body: RefreshIndicator(
+            onRefresh: cargarPerfilFresco,
+            color: const Color(0xFF800000),
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
+              : SingleChildScrollView(
+                  controller: _scrollController, // CONECTAMOS EL SCROLL CONTROLLER AQUÍ
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 70,
-                        backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                        backgroundImage: _currentAvatarUrl != null ? CachedNetworkImageProvider(_currentAvatarUrl!) : null,
-                        child: _isUploading
-                            ? const CircularProgressIndicator(color: Color(0xFF800000))
-                            : _currentAvatarUrl == null 
-                                ? const Icon(Icons.person, size: 70, color: Color(0xFF800000)) 
-                                : null,
+                      const SizedBox(height: 20),
+                      
+                      Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          CircleAvatar(
+                            radius: 70,
+                            backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                            backgroundImage: _currentAvatarUrl != null ? CachedNetworkImageProvider(_currentAvatarUrl!) : null,
+                            child: _isUploading
+                                ? const CircularProgressIndicator(color: Color(0xFF800000))
+                                : _currentAvatarUrl == null 
+                                    ? const Icon(Icons.person, size: 70, color: Color(0xFF800000)) 
+                                    : null,
+                          ),
+                          if (!_isUploading)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF800000), 
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 3),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                                  onPressed: _cambiarFoto,
+                                  tooltip: "Cambiar foto",
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      if (!_isUploading)
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF800000), 
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                            ),
-                            child: IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                              onPressed: _cambiarFoto,
-                              tooltip: "Cambiar foto",
-                            ),
+                      const SizedBox(height: 15),
+
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: widget.rol == 'admin' ? Colors.amber.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: widget.rol == 'admin' ? Colors.amber : Colors.blue)
+                        ),
+                        child: Text(
+                          widget.rol.toUpperCase(),
+                          style: TextStyle(
+                            color: widget.rol == 'admin' ? Colors.orange[800] : Colors.blue[800],
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12
                           ),
                         ),
+                      ),
+                      
+                      const SizedBox(height: 30),
+
+                      TextField(
+                        controller: TextEditingController(text: _nombreActual),
+                        readOnly: true, 
+                        decoration: InputDecoration(
+                          labelText: "Nombre Completo",
+                          prefixIcon: const Icon(Icons.badge, color: Colors.grey),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                            onPressed: _cambiarNombre,
+                            tooltip: "Editar nombre",
+                          ),
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      TextField(
+                        controller: TextEditingController(text: _correoUsuario),
+                        readOnly: true, 
+                        decoration: InputDecoration(
+                          labelText: "Correo Institucional",
+                          prefixIcon: const Icon(Icons.email, color: Colors.grey),
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                        ),
+                      ),
+
+                      if (_esEstudiante) ...[
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: TextEditingController(text: _nombreCarreraActual),
+                          readOnly: true, 
+                          decoration: InputDecoration(
+                            labelText: "Carrera",
+                            prefixIcon: const Icon(Icons.school, color: Colors.grey),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.edit, color: Color(0xFF800000)),
+                              onPressed: _cambiarCarrera, 
+                              tooltip: "Cambiar carrera",
+                            ),
+                            border: const OutlineInputBorder(),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 40), 
+                      
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const MisReportesScreen()),
+                            );
+                          },
+                          icon: const Icon(Icons.list_alt),
+                          label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF800000),
+                            elevation: 0,
+                            side: const BorderSide(color: Color(0xFF800000), width: 1.5),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 15), 
+                      
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _cerrarSesion(context),
+                          icon: const Icon(Icons.logout),
+                          label: const Text("CERRAR SESIÓN", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[50],
+                            foregroundColor: Colors.red[700],
+                            elevation: 0,
+                            side: BorderSide(color: Colors.red[200]!),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 15),
-
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: widget.rol == 'admin' ? Colors.amber.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: widget.rol == 'admin' ? Colors.amber : Colors.blue)
-                    ),
-                    child: Text(
-                      widget.rol.toUpperCase(),
-                      style: TextStyle(
-                        color: widget.rol == 'admin' ? Colors.orange[800] : Colors.blue[800],
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 30),
-
-                  TextField(
-                    controller: TextEditingController(text: _nombreActual),
-                    readOnly: true, 
-                    decoration: InputDecoration(
-                      labelText: "Nombre Completo",
-                      prefixIcon: const Icon(Icons.badge, color: Colors.grey),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.edit, color: Color(0xFF800000)),
-                        onPressed: _cambiarNombre,
-                        tooltip: "Editar nombre",
-                      ),
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  TextField(
-                    controller: TextEditingController(text: _correoUsuario),
-                    readOnly: true, 
-                    decoration: InputDecoration(
-                      labelText: "Correo Institucional",
-                      prefixIcon: const Icon(Icons.email, color: Colors.grey),
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                    ),
-                  ),
-
-                  if (_esEstudiante) ...[
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: TextEditingController(text: _nombreCarreraActual),
-                      readOnly: true, 
-                      decoration: InputDecoration(
-                        labelText: "Carrera",
-                        prefixIcon: const Icon(Icons.school, color: Colors.grey),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.edit, color: Color(0xFF800000)),
-                          onPressed: _cambiarCarrera, 
-                          tooltip: "Cambiar carrera",
-                        ),
-                        border: const OutlineInputBorder(),
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 40), 
-                  
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const MisReportesScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.list_alt),
-                      label: const Text("MIS REPORTES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF800000),
-                        elevation: 0,
-                        side: const BorderSide(color: Color(0xFF800000), width: 1.5),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 15), 
-                  
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _cerrarSesion(context),
-                      icon: const Icon(Icons.logout),
-                      label: const Text("CERRAR SESIÓN", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red[50],
-                        foregroundColor: Colors.red[700],
-                        elevation: 0,
-                        side: BorderSide(color: Colors.red[200]!),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+          ),
+        ),
       ),
     );
   }

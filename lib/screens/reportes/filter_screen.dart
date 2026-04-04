@@ -266,7 +266,7 @@ class _FilterScreenState extends State<FilterScreen> {
                   const SizedBox(height: 15),
                   TextField(
                     controller: _usuarioController,
-                    decoration: const InputDecoration(labelText: "Usuario (Nombre o No. Control)", prefixIcon: Icon(Icons.person), border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: "Usuario", prefixIcon: Icon(Icons.person), border: OutlineInputBorder()),
                   ),
                   
                   const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Divider()),

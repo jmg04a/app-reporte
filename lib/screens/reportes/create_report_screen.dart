@@ -47,9 +47,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   XFile? _imagenSeleccionada;
   final ImagePicker _picker = ImagePicker();
 
-  /// UniqueKey to force rebuilding the Autocomplete widget when resetting state.
-  Key _autocompleteKey = UniqueKey();
-
   /// State flags for image modification during Edit Mode.
   String? _imagenViejaUrl;
   bool _eliminoImagenVieja = false;
@@ -75,9 +72,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   /// Bootstraps the form by loading required catalog dictionaries (Categories and Locations).
-  ///
-  /// Implements Optimistic UI by loading stale cache first, then asynchronously 
-  /// querying Supabase. Finally, hydrates the form based on the current mode (Edit vs Create).
   Future<void> _cargarDatosIniciales() async {
     final prefs = await SharedPreferences.getInstance();
     final catsCache = prefs.getString('categorias_cache');
@@ -92,7 +86,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     try {
       final supabase = Supabase.instance.client;
       
-      // Fetch both dictionaries concurrently to reduce network waterfall delay.
       final respuestas = await Future.wait([
         supabase.from('cat_categorias').select('id, nombre, icono, color').order('nombre'),
         supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre')
@@ -121,10 +114,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// Processes raw location data into a flattened, searchable format.
-  /// 
-  /// Appends the parent building name to classrooms for better Autocomplete UX 
-  /// (e.g., "Aula 3 (Sistemas)").
   void _procesarYMostrarCatalogos(List<dynamic> categoriasData, List<dynamic> lugaresData) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
@@ -159,7 +148,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// Hydrates the form controllers and state variables using the passed report payload.
   void _prellenarDatosEdicion() {
     final rep = widget.reporteExistente!;
     setState(() {
@@ -172,7 +160,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _cargarUbicacionEdicion(rep['id']);
   }
 
-  /// Resolves the specific location entity for the report being edited.
   Future<void> _cargarUbicacionEdicion(int reporteId) async {
     try {
       final data = await Supabase.instance.client
@@ -189,7 +176,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             orElse: () => {'nombreBuscable': ''}
           );
           _lugarTextoActual = lugarEncontrado['nombreBuscable'];
-          _autocompleteKey = UniqueKey();
         });
       }
     } catch (e) {
@@ -197,7 +183,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// Restores the unsaved draft from device storage (Creation Mode only).
   Future<void> _cargarBorrador() async {
     final prefs = await SharedPreferences.getInstance();
     final borradorStr = prefs.getString('reporte_borrador');
@@ -209,8 +194,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _descripcionController.text = borrador['descripcion'] ?? '';
         _selectedCategoriaId = borrador['categoriaId'];
         _selectedLugarId = borrador['lugarId'];
-
-        _autocompleteKey = UniqueKey();
       });
     }
 
@@ -218,9 +201,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _descripcionController.addListener(_guardarBorrador);
   }
 
-  /// Silently serializes current form state to SharedPreferences.
   Future<void> _guardarBorrador() async {
-    if (_esEdicion) return; // Prevent overwriting drafts while editing an existing report.
+    if (_esEdicion) return; 
     final prefs = await SharedPreferences.getInstance();
     final borrador = {
       'titulo': _tituloController.text,
@@ -231,7 +213,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     await prefs.setString('reporte_borrador', jsonEncode(borrador));
   }
 
-  /// Prompts user confirmation before wiping form state and local storage.
   Future<void> _limpiarBorrador() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -281,7 +262,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _imagenSeleccionada = null;
         _errorLugar = null;
         _lugarTextoActual = '';
-        _autocompleteKey = UniqueKey(); 
       });
     }
   }
@@ -368,14 +348,85 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// Core submission handler.
-  ///
-  /// Orchestrates data validation, optional binary image upload to Supabase Storage, 
-  /// and branches logic to perform either an SQL INSERT (Creation) or UPDATE (Edition).
-  Future<void> _enviarReporte() async {
-    if (_isSubmitting) return; // Prevent spamming shortcut
+  /// Opens a Bottom Sheet for location selection.
+  void _abrirBuscadorDeLugares() {
+    String filtroLocal = '';
 
-    // 1. Strict Form Validation
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, 
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final opcionesFiltradas = _todosLosLugares
+                .where((l) => l['nombreBuscable'].toString().toLowerCase().contains(filtroLocal.toLowerCase()))
+                .toList();
+
+            return FractionallySizedBox(
+              heightFactor: 0.85, 
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                  top: 16, left: 16, right: 16
+                ),
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: "Buscar edificio o aula...",
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) {
+                        setModalState(() {
+                          filtroLocal = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: opcionesFiltradas.length,
+                        itemBuilder: (context, index) {
+                          final option = opcionesFiltradas[index];
+                          final esEdificio = option['padre_nombre'] == '';
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
+                              child: Icon(esEdificio ? Icons.domain : Icons.meeting_room, color: const Color(0xFF800000)),
+                            ),
+                            title: Text(option['nombre'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(esEdificio ? "Edificio Principal" : "Pertenece a: ${option['padre_nombre']}"),
+                            onTap: () {
+                              setState(() {
+                                _selectedLugarId = option['id'];
+                                _lugarTextoActual = option['nombreBuscable'];
+                                _errorLugar = null;
+                              });
+                              _guardarBorrador();
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _enviarReporte() async {
+    if (_isSubmitting) return; 
+
     if (_tituloController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa un título.", esError: true);
       return;
@@ -385,19 +436,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       return;
     }
 
-    if (_selectedLugarId == null && _lugarTextoActual.trim().isNotEmpty) {
-      final matchExacto = _todosLosLugares.where((l) =>
-          l['nombreBuscable'].toString().toLowerCase() == _lugarTextoActual.trim().toLowerCase()).toList();
-      
-      if (matchExacto.isNotEmpty) {
-        _selectedLugarId = matchExacto.first['id']; 
-        setState(() => _errorLugar = null);
-      }
-    }
-
     if (_selectedLugarId == null) {
-      setState(() => _errorLugar = "Por favor seleccionar un edificio o aula válida");
-      _mostrarMensaje("Por favor seleccionar un edificio o aula válida.", esError: true);
+      setState(() => _errorLugar = "Por favor selecciona un edificio o aula válida");
+      _mostrarMensaje("Por favor selecciona un edificio o aula válida.", esError: true);
       return;
     }
 
@@ -409,30 +450,21 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       String? evidenciaUrlFinal = _eliminoImagenVieja ? null : _imagenViejaUrl;
 
-      // 2. Binary Upload (If a new image is attached)
       if (_imagenSeleccionada != null) {
-        // Forzamos la extensión a JPG porque vamos a comprimir a ese formato
         final nombreArchivo = '${DateTime.now().millisecondsSinceEpoch}.jpg';
         final rutaArchivo = '$userId/$nombreArchivo';
         
-        // Leemos el archivo pesadísimo
         Uint8List imageBytes = await _imagenSeleccionada!.readAsBytes();
 
-        // 🛑 COMPRESIÓN MANUAL (Solo para Escritorio: Mac, Windows, Linux)
         if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-          // Decodificamos el mapa de bits
           img.Image? imagenOriginal = img.decodeImage(imageBytes);
           
           if (imagenOriginal != null) {
-            // Achicamos preservando el Aspect Ratio
             img.Image imagenAchicada = img.copyResize(imagenOriginal, width: 1080);
-            
-            // Re-escribimos la variable con los nuevos bytes comprimidos
             imageBytes = Uint8List.fromList(img.encodeJpg(imagenAchicada, quality: 70));
           }
         }
 
-        // Subimos los bytes (ya sean los del celular o los comprimidos en PC)
         await supabase.storage.from('evidencias').uploadBinary(
               rutaArchivo,
               imageBytes,
@@ -445,7 +477,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         evidenciaUrlFinal = supabase.storage.from('evidencias').getPublicUrl(rutaArchivo);
       }
 
-      // 3. Database Mutation
       if (_esEdicion) {
         final reporteId = widget.reporteExistente!['id'];
 
@@ -479,7 +510,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           'lugar_id': _selectedLugarId,
         });
 
-        // Clear local storage draft upon successful database insert.
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('reporte_borrador');
 
@@ -508,22 +538,19 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       );
     }
 
-    String textLugarInicial = '';
-    if (_selectedLugarId != null && _todosLosLugares.isNotEmpty) {
+    if (_selectedLugarId != null && _todosLosLugares.isNotEmpty && _lugarTextoActual.isEmpty) {
       final lugarEncontrado = _todosLosLugares.firstWhere(
         (l) => l['id'] == _selectedLugarId, 
         orElse: () => {'nombreBuscable': ''}
       );
-      textLugarInicial = lugarEncontrado['nombreBuscable'];
+      _lugarTextoActual = lugarEncontrado['nombreBuscable'];
     }
-    
-    _lugarTextoActual = textLugarInicial;
 
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple,includeRepeats: false): () {
+        SingleActivator(LogicalKeyboardKey.keyS, control: !isApple, meta: isApple, includeRepeats: false): () {
            if (!_isSubmitting) _enviarReporte();
         },
       },
@@ -575,93 +602,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 15),
               
-              Autocomplete<Map<String, dynamic>>(
-                key: _autocompleteKey, 
-                initialValue: TextEditingValue(text: _lugarTextoActual), 
-                optionsBuilder: (TextEditingValue textEditingValue) {
-                  if (textEditingValue.text.isEmpty) {
-                    return const Iterable<Map<String, dynamic>>.empty();
-                  }
-                  final query = textEditingValue.text.toLowerCase();
-                  return _todosLosLugares.where((lugar) =>
-                      lugar['nombreBuscable'].toString().toLowerCase().contains(query));
-                },
-                displayStringForOption: (option) => option['nombreBuscable'],
-                onSelected: (option) {
-                  setState(() {
-                    _selectedLugarId = option['id'];
-                    _errorLugar = null; 
-                  });
-                  _guardarBorrador(); 
-                  FocusScope.of(context).unfocus(); 
-                },
-                fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    decoration: InputDecoration(
-                      labelText: "Buscar edificio o aula...",
-                      hintText: "Ej. 19, Sistemas, Aula 3",
-                      prefixIcon: const Icon(Icons.search),
-                      border: const OutlineInputBorder(),
-                      errorText: _errorLugar, 
+              // Aquí entra el nuevo InkWell + InputDecorator en lugar del Autocomplete
+              InkWell(
+                onTap: _abrirBuscadorDeLugares,
+                borderRadius: BorderRadius.circular(4),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: "Edificio o aula",
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    errorText: _errorLugar,
+                  ),
+                  child: Text(
+                    _lugarTextoActual.isEmpty ? "Toca para buscar..." : _lugarTextoActual,
+                    style: TextStyle(
+                      color: _lugarTextoActual.isEmpty ? Colors.grey[600] : Colors.black, 
+                      fontSize: 16,
                     ),
-                    onChanged: (val) {
-                      _lugarTextoActual = val; 
-                      
-                      if (_selectedLugarId != null) {
-                        setState(() => _selectedLugarId = null); 
-                      }
-                      if (_errorLugar != null) {
-                        setState(() => _errorLugar = null); 
-                      }
-                      _guardarBorrador();
-                    },
-                  );
-                },
-                optionsViewBuilder: (context, onSelected, options) {
-                  final anchosCaja = MediaQuery.of(context).size.width - 48; 
-                  
-                  return Align(
-                    alignment: Alignment.topLeft,
-                    child: Material(
-                      elevation: 8,
-                      borderRadius: BorderRadius.circular(8),
-                      clipBehavior: Clip.antiAlias,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: 250, maxWidth: anchosCaja),
-                        child: ListView.separated(
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: true,
-                          itemCount: options.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
-                          itemBuilder: (BuildContext context, int index) {
-                            final option = options.elementAt(index);
-                            final esEdificio = option['padre_nombre'] == '';
-  
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: const Color(0xFF800000).withValues(alpha: 0.1),
-                                child: Icon(
-                                  esEdificio ? Icons.domain : Icons.meeting_room,
-                                  color: const Color(0xFF800000),
-                                ),
-                              ),
-                              title: Text(
-                                option['nombre'], 
-                                style: const TextStyle(fontWeight: FontWeight.bold)
-                              ),
-                              subtitle: esEdificio
-                                  ? const Text("Zona / Edificio Principal", style: TextStyle(color: Colors.grey, fontSize: 12))
-                                  : Text("Pertenece a: ${option['padre_nombre']}", style: const TextStyle(color: Color(0xFF800000), fontSize: 12)),
-                              onTap: () => onSelected(option),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  );
-                },
+                  ),
+                ),
               ),
   
               const SizedBox(height: 20),

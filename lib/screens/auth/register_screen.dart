@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Entry point for new user registration.
-///
-/// Handles user creation via Supabase Auth and collects extended metadata 
-/// (full name, student status, and academic major) to be appended 
-/// to the internal `auth.users` raw metadata payload.
 class RegisterScreen extends StatefulWidget {
-  /// Pre-fills the email input if routed directly from the login screen.
   final String? initialEmail;
 
   const RegisterScreen({super.key, this.initialEmail});
@@ -22,21 +16,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  /// Institutional domain suffix appended automatically if the user omits it.
   static const String _dominio = "@correo.itlalaguna.edu.mx";
-  
   bool _isLoading = false;
-
-  /// Toggles the visibility state of the password input fields.
   bool _obscurePassword = true; 
-
-  /// Holds the cached catalog of academic majors fetched from the database.
   List<Map<String, dynamic>> _carreras = []; 
-  
   int? _selectedCarreraId;
   
-  /// Controls the visibility and enforcement of the academic major dropdown.
-  /// If true, [_selectedCarreraId] becomes a required field.
+  // Ahora es solo una bandera que se controla automáticamente
   bool _esAlumno = false; 
 
   @override
@@ -44,18 +30,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.initState();
     _cargarCarreras();
     
-    // UX Optimization: Auto-fill the email if inherited from previous screen.
+    _correoController.addListener(_evaluarTipoUsuario);
+
     if (widget.initialEmail != null && widget.initialEmail!.isNotEmpty) {
       _correoController.text = widget.initialEmail!;
     }
-    
-    // Attach listener to evaluate input heuristically in real-time.
-    _correoController.addListener(_sugerirTipoUsuario);
   }
 
   @override
   void dispose() {
-    _correoController.removeListener(_sugerirTipoUsuario);
+    _correoController.removeListener(_evaluarTipoUsuario);
     _nombreController.dispose();
     _correoController.dispose();
     _passwordController.dispose();
@@ -63,29 +47,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  /// Heuristic algorithm to auto-detect if the user is a student.
-  ///
-  /// Evaluates the prefix of the institutional email. ITL students typically 
-  /// use 'alu.[control_number]' or '[l][control_number]'. 
-  /// Automatically toggles the [_esAlumno] state to enhance UX, though 
-  /// the user retains manual override control via the Switch widget.
-  void _sugerirTipoUsuario() {
+  /// Evalúa el correo y muestra/oculta el selector de carreras
+  /// basándose en las reglas estrictas de la base de datos.
+  void _evaluarTipoUsuario() {
     final texto = _correoController.text.trim().toLowerCase();
     
-    bool pareceAlumno = texto.startsWith('alu.') || 
-                        (texto.startsWith('l') && RegExp(r'^l[0-9]').hasMatch(texto)) ||
-                        RegExp(r'^[0-9]').hasMatch(texto);
+    // Si la BD solo acepta 'alu.', la regla aquí debe ser idéntica.
+    // (Agregué la 'l' por si acaso, pero la puedes quitar si tu BD la rechaza)
+    bool esCorreoAlumno = texto.startsWith('alu.') || 
+                          (texto.startsWith('l') && RegExp(r'^l[0-9]').hasMatch(texto));
 
-    // Only auto-toggle to true if the heuristic matches and the state is currently false,
-    // avoiding disruptive UX overrides if the user manually disabled it.
-    if (pareceAlumno && !_esAlumno) {
+    if (esCorreoAlumno != _esAlumno) {
       setState(() {
-        _esAlumno = true;
+        _esAlumno = esCorreoAlumno;
+        if (!_esAlumno) {
+          _selectedCarreraId = null; // Limpiar si borra el 'alu.'
+        }
       });
     }
   }
 
-  /// Fetches the 'cat_carreras' catalog from Supabase to populate the dropdown.
   Future<void> _cargarCarreras() async {
     try {
       final data = await Supabase.instance.client
@@ -103,7 +84,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  /// Displays transient UI feedback for validation and network responses.
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -114,15 +94,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  /// Orchestrates the registration flow and payload construction.
   Future<void> _crearCuenta() async {
-    // 1. Pre-flight UI Validation
     if (_nombreController.text.trim().isEmpty) {
       _mostrarMensaje("Ingresa tu nombre completo.", esError: true);
       return;
     }
     
-    // Enforce major selection strictly if the student flag is active.
     if (_esAlumno && _selectedCarreraId == null) {
       _mostrarMensaje("Por favor selecciona tu carrera.", esError: true);
       return;
@@ -140,16 +117,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 2. Data Sanitization
       String inputCorreo = _correoController.text.trim();
       String emailFinal = inputCorreo.contains('@') 
           ? inputCorreo 
           : inputCorreo + _dominio;
 
-      // 3. Auth Request
-      // We embed extended metadata ('data' object) which triggers a Postgres 
-      // trigger on the backend to automatically populate the 'perfiles' and 
-      // 'estudiantes' tables upon successful registration.
       final response = await Supabase.instance.client.auth.signUp(
         email: emailFinal,
         password: _passwordController.text,
@@ -161,8 +133,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (!mounted) return;
 
-      // 4. Response Handling
-      // If session is null, email confirmation is strictly required by the backend.
       if (response.session == null) {
         showDialog(
           context: context,
@@ -172,8 +142,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  // Return the typed email back to the login screen
+                  Navigator.pop(context);
                   Navigator.pop(context, _correoController.text.trim()); 
                 },
                 child: const Text("Ir al Login"),
@@ -183,7 +152,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       } else {
         _mostrarMensaje("¡Cuenta creada con éxito!");
-        // Return the typed email back to the login screen
         Navigator.pop(context, _correoController.text.trim());
       }
 
@@ -203,7 +171,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         title: const Text("Crear Cuenta"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
-        // Override back button behavior to pass state backwards
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, _correoController.text.trim()),
@@ -252,27 +219,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 keyboardType: TextInputType.text, 
               ),
               
-              // Manual override for the student heuristic
-              SwitchListTile(
-                title: const Text(
-                  "¿Eres Estudiante?", 
-                  style: TextStyle(fontWeight: FontWeight.bold)
-                ),
-                subtitle: const Text("Actívalo para seleccionar tu carrera"),
-                value: _esAlumno,
-                activeTrackColor: const Color(0xFF800000),
-                onChanged: (bool valor) {
-                  setState(() {
-                    _esAlumno = valor;
-                    // Garbage collection: Nullify major if user is not a student
-                    // to prevent sending dirty data to Supabase.
-                    if (!_esAlumno) _selectedCarreraId = null;
-                  });
-                },
-              ),
-
-              // Academic Major Dropdown (Conditional rendering based on [_esAlumno])
+              // Interfaz totalmente reactiva: sin switches manuales.
               if (_esAlumno) ...[
+                const Padding(
+                  padding: EdgeInsets.only(top: 15.0, bottom: 5.0, left: 5.0, right: 5.0),
+                  child: Text(
+                    "Identificamos tu número de control. Por favor selecciona tu carrera:",
+                    style: TextStyle(color: Color(0xFF800000), fontWeight: FontWeight.w600),
+                  ),
+                ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
                   initialValue: _selectedCarreraId,
@@ -310,7 +265,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   labelText: "Contraseña",
                   prefixIcon: const Icon(Icons.lock_outline),
                   border: const OutlineInputBorder(),
-                  // Implementation identical to RecoveryScreen for password visibility
                   suffixIcon: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                     onPressed: () {
@@ -330,7 +284,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   labelText: "Confirmar Contraseña",
                   prefixIcon: const Icon(Icons.lock_reset),
                   border: const OutlineInputBorder(),
-                  // Linked to the same visibility state variable for UX consistency
                   suffixIcon: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                     onPressed: () {
