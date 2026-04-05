@@ -48,6 +48,20 @@ flutter pub get
 flutter run
 ```
 
+## 🗄️ Configuración de la Base de Datos (Fase de Pruebas)
+
+Toda la infraestructura del backend (tablas, relaciones, funciones, triggers, reglas RLS y buckets de Storage) está documentada y versionada en este repositorio.
+
+Para levantar tu propio entorno en Supabase, ejecuta los scripts dentro de la carpeta `database/` en el **SQL Editor** siguiendo este orden estricto:
+
+1. **`01_esquema.sql` (Infraestructura):** Define las tablas, relaciones y funciones de seguridad (con blindaje `search_path`). También configura los disparadores (triggers) y los buckets de almacenamiento `evidencias` y `avatars` con sus respectivas políticas RLS.
+2. **`02_seed.sql` (Catálogos Base):** Inserta los datos maestros necesarios para que la aplicación sea funcional desde el primer inicio, como el catálogo de carreras, edificios y las categorías de reportes.
+3. **`03_test_data.sql` (Opcional - Pruebas de Estrés):** Genera automáticamente 1,000 reportes aleatorios vinculados a usuarios y ubicaciones existentes. Este script es fundamental para validar el rendimiento del *Infinite Scroll*, la persistencia de la caché de imágenes y la gestión de memoria RAM de la aplicación.
+
+> **Nota importante:** Los scripts de esquema y seed utilizan transacciones de base de datos (`BEGIN; ... COMMIT;`) para garantizar que la configuración se aplique de forma atómica y segura.
+
+*Nota: El script está diseñado para ejecutarse en una sola transacción (`BEGIN; ... COMMIT;`), por lo que configurará toda la base de datos de forma segura en un par de segundos.*
+
 ## 📋 Próximas Mejoras (Roadmap / To-Do)
 
 El proyecto se encuentra en constante evolución. Las siguientes tareas están planeadas para futuras versiones:
@@ -58,4 +72,5 @@ El proyecto se encuentra en constante evolución. Las siguientes tareas están p
 - [ ] **Pantalla de Ajustes:** Crear un menú de configuración para manejar preferencias locales de la aplicación.
 - [ ] **Dark Mode:** Soporte nativo para Tema Oscuro y opciones de personalización de la paleta de colores.
 - [ ] **Branding Oficial:** Diseño e integración de recursos gráficos finales (ícono de la app, logotipo y *Splash Screen* mejorado).
-- [ ] **Sprint de la BD:** Para que cualquiera pueda replicarla y probar la aplicación.
+- [x] **Scripts de la BD:** Para que cualquiera pueda replicarla y probar la aplicación.
+
