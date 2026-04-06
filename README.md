@@ -36,7 +36,7 @@ Antes de ejecutar el proyecto, asegúrate de tener instalado:
 
 1. Clona este repositorio:
 ```bash
-git clone [https://github.com/tu-usuario/reportes-itl.git](https://github.com/tu-usuario/reportes-itl.git)
+git clone https://github.com/jmg04a/app-reporte.git
 ```
 2. Instala las dependencias
 ```bash
