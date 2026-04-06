@@ -60,8 +60,6 @@ Para levantar tu propio entorno en Supabase, ejecuta los scripts dentro de la ca
 
 > **Nota importante:** Los scripts de esquema y seed utilizan transacciones de base de datos (`BEGIN; ... COMMIT;`) para garantizar que la configuración se aplique de forma atómica y segura.
 
-*Nota: El script está diseñado para ejecutarse en una sola transacción (`BEGIN; ... COMMIT;`), por lo que configurará toda la base de datos de forma segura en un par de segundos.*
-
 ## 📋 Próximas Mejoras (Roadmap / To-Do)
 
 El proyecto se encuentra en constante evolución. Las siguientes tareas están planeadas para futuras versiones:
