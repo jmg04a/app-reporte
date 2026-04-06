@@ -40,7 +40,7 @@ git clone https://github.com/jmg04a/app-reporte.git
 ```
 2. Instala las dependencias
 ```bash
-cd reportes-itl
+cd reporte-itl
 flutter pub get
 ```
 3. Ejecuta la aplicación en tu emulador o dispositivo físico:
