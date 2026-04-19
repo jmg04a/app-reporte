@@ -5,12 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'create_report_screen.dart'; 
 
-/// Comprehensive detail view for a specific report.
+/// Vista detallada y exhaustiva para un reporte específico.
 ///
-/// Implements Role-Based Access Control (RBAC) at the UI level:
-/// - **Admins:** Can mutate the resolution state (Pending -> In Progress -> Resolved) and soft-delete.
-/// - **Creators:** Can edit the payload (if pending) and soft-delete their own reports.
-/// - **Standard Users:** Can view details and toggle their "Me too" reaction.
+/// Implementa Control de Acceso Basado en Roles (RBAC) a nivel de interfaz de usuario:
+/// - **Administradores:** Pueden modificar el estado de resolución (Pendiente -> En Proceso -> Resuelto) y aplicar borrado lógico (soft-delete).
+/// - **Creadores:** Pueden editar el contenido (si está en estado pendiente) y aplicar borrado lógico a sus propios reportes.
+/// - **Usuarios Estándar:** Pueden ver los detalles y alternar su reacción de "A mí también".
 class ReportDetailScreen extends StatefulWidget {
   final int reporteId;
 
@@ -25,12 +25,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   String _ubicacionExacta = "Cargando...";
   bool _isLoading = true;
   
-  // --- RBAC and State Variables ---
+  // --- Variables de Estado y RBAC ---
   bool _isAdmin = false;
   bool _isCreator = false; 
   String _estadoActual = 'pendiente';
 
-  // --- Reaction Mechanics Variables ---
+  // --- Variables para la Mecánica de Reacciones ---
   bool _yaReacciono = false;
   int _contadorReacciones = 0;
 
@@ -38,7 +38,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   final List<String> _estadosDisponibles = ['pendiente', 'en proceso', 'resuelto'];
   
-  /// Explicit Focus node to guarantee global hotkey interception.
+  /// Nodo de enfoque explícito para garantizar la intercepción de atajos de teclado globales.
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -53,17 +53,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     super.dispose();
   }
 
-  /// Fetches the comprehensive payload for the requested report.
+  /// Descarga el paquete de datos completo para el reporte solicitado.
   ///
-  /// Resolves all required foreign keys (category, user, location) and 
-  /// performs parallel checks to establish the current user's RBAC privileges 
-  /// and previous reaction state.
+  /// Resuelve todas las llaves foráneas requeridas (categoría, usuario, ubicación) y 
+  /// realiza comprobaciones en paralelo para establecer los privilegios RBAC 
+  /// del usuario actual y su estado previo de reacción.
   Future<void> _cargarDetalles() async {
     try {
       final supabase = Supabase.instance.client;
       final currentUserId = supabase.auth.currentUser!.id;
 
-      // Determine administrative privileges
+      // Determinar privilegios administrativos
       try {
         final currentUserData = await supabase
             .from('perfiles')
@@ -78,7 +78,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         debugPrint("Error verificando rol: $e");
       }
 
-      // Fetch primary payload with inner joins
+      // Descargar datos principales resolviendo relaciones (inner joins)
       final reporteData = await supabase.from('reportes').select('''
         *,
         cat_categorias (nombre, icono, color),
@@ -93,7 +93,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         cat_lugares (nombre)
       ''').eq('reporte_id', widget.reporteId).maybeSingle();
 
-      // Determine if the current user has already reacted to this report
+      // Determinar si el usuario actual ya reaccionó a este reporte
       final reaccionData = await supabase
           .from('reacciones')
           .select('id')
@@ -122,7 +122,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  /// Routes to the CreateReportScreen in "Edit Mode" if permissions are met.
+  /// Navega hacia [CreateReportScreen] en "Modo Edición" si se cumplen los permisos.
   Future<void> _abrirEdicion() async {
 
     if (_navegandoAEdicion) return;
@@ -146,7 +146,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  /// Mutates the resolution state of the report (Admin only).
+  /// Modifica el estado de resolución del reporte (Privilegio exclusivo de Administrador).
+  ///
+  /// Parámetros:
+  /// * [nuevoEstado]: La cadena de texto que representa el nuevo estado ('pendiente', 'en proceso', 'resuelto').
   Future<void> _actualizarEstado(String nuevoEstado) async {
     if (nuevoEstado == _estadoActual) return;
 
@@ -180,12 +183,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  /// Toggles the user's reaction to the report.
+  /// Alterna la reacción ("A mí también") del usuario frente al reporte.
+  ///
+  /// Implementa una actualización optimista (Optimistic Update) en la interfaz gráfica 
+  /// asumiendo éxito en la petición, pero revierte el estado en caso de fallo de red.
   Future<void> _toggleReaccion() async {
     final supabase = Supabase.instance.client;
     final userId = supabase.auth.currentUser!.id;
 
-    // Optimistic update
+    // Actualización optimista de la UI
     setState(() {
       _yaReacciono = !_yaReacciono;
       _contadorReacciones += _yaReacciono ? 1 : -1;
@@ -204,7 +210,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             .match({'reporte_id': widget.reporteId, 'usuario_id': userId});
       }
     } catch (e) {
-      // Rollback on failure
+      // Reversión (Rollback) en caso de fallo
       if (mounted) {
         setState(() {
           _yaReacciono = !_yaReacciono;
@@ -217,7 +223,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
   }
 
-  /// Executes a "Soft Delete" on the report.
+  /// Ejecuta un borrado lógico (Soft Delete) sobre el reporte actual.
+  ///
+  /// Oculta el registro del sistema estableciendo la bandera `visible` en `false` 
+  /// en lugar de eliminar la fila permanentemente de la base de datos.
   Future<void> _borrarReporte() async {
     final confirmar = await showDialog<bool>(
       context: context,

@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Pantalla para la creación de nuevas cuentas de usuario.
+///
+/// Gestiona el registro en Supabase Auth permitiendo a los usuarios crear 
+/// una cuenta. Implementa una interfaz reactiva que detecta automáticamente 
+/// si el usuario es un estudiante basándose en su prefijo de correo, 
+/// solicitando datos adicionales (como la carrera) de ser necesario.
 class RegisterScreen extends StatefulWidget {
   final String? initialEmail;
 
@@ -22,7 +28,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   List<Map<String, dynamic>> _carreras = []; 
   int? _selectedCarreraId;
   
-  // Ahora es solo una bandera que se controla automáticamente
+  // Bandera controlada automáticamente por el listener del correo.
   bool _esAlumno = false; 
 
   @override
@@ -47,13 +53,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  /// Evalúa el correo y muestra/oculta el selector de carreras
-  /// basándose en las reglas estrictas de la base de datos.
+  /// Evalúa dinámicamente el prefijo del correo para determinar el tipo de usuario.
+  ///
+  /// Escucha los cambios en el campo de correo y ajusta la bandera `_esAlumno`
+  /// basándose en las reglas estrictas de la base de datos (ej. comienza con 'alu.' 
+  /// o 'l' seguido de números). Esto controla la visibilidad del selector de carreras.
   void _evaluarTipoUsuario() {
     final texto = _correoController.text.trim().toLowerCase();
     
-    // Si la BD solo acepta 'alu.', la regla aquí debe ser idéntica.
-    // (Agregué la 'l' por si acaso, pero la puedes quitar si tu BD la rechaza)
+    // Validar coincidencia con formato institucional estudiantil.
     bool esCorreoAlumno = texto.startsWith('alu.') || 
                           (texto.startsWith('l') && RegExp(r'^l[0-9]').hasMatch(texto));
 
@@ -61,12 +69,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() {
         _esAlumno = esCorreoAlumno;
         if (!_esAlumno) {
-          _selectedCarreraId = null; // Limpiar si borra el 'alu.'
+          _selectedCarreraId = null; // Limpiar selección si el usuario borra el prefijo.
         }
       });
     }
   }
 
+  /// Descarga el catálogo de carreras disponibles desde la base de datos.
+  ///
+  /// Realiza una consulta a la tabla `cat_carreras` en Supabase para poblar
+  /// el menú desplegable (Dropdown) requerido durante el registro de estudiantes.
   Future<void> _cargarCarreras() async {
     try {
       final data = await Supabase.instance.client
@@ -84,6 +96,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Muestra una alerta visual temporal (SnackBar) para retroalimentación.
+  ///
+  /// Parámetros:
+  /// * [mensaje]: El texto informativo a mostrar.
+  /// * [esError]: Cambia el color de fondo a rojo si es verdadero, verde si es falso.
   void _mostrarMensaje(String mensaje, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -94,6 +111,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  /// Ejecuta el flujo de validación local y el registro en Supabase Auth.
+  ///
+  /// 1. Valida campos vacíos, formato de contraseña y selección de carrera (si aplica).
+  /// 2. Autocompleta el dominio institucional.
+  /// 3. Envía credenciales e inyecta metadatos (`full_name`, `carrera_id`) a Supabase.
+  /// 4. Muestra un cuadro de diálogo notificando que se requiere verificación por correo.
   Future<void> _crearCuenta() async {
     if (_nombreController.text.trim().isEmpty) {
       _mostrarMensaje("Ingresa tu nombre completo.", esError: true);
@@ -133,6 +156,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (!mounted) return;
 
+      // Si session es nulo con confirmación habilitada, se requiere verificar el correo.
       if (response.session == null) {
         showDialog(
           context: context,

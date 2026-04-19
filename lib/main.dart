@@ -10,32 +10,43 @@ import 'screens/splash/splash_screen.dart';
 import 'screens/reportes/filter_screen.dart'; 
 import 'screens/reportes/create_report_screen.dart'; 
 
-/// Global configuration states.
-/// [navigatorKey] provides global access to the NavigatorState for imperative routing outside the widget tree.
-/// [globalTabIndex] manages the state of the BottomNavigationBar across the application.
+/// Llave global para el navegador de la aplicación.
+///
+/// Permite el acceso al [NavigatorState] para realizar enrutamiento imperativo
+/// desde cualquier parte del código, incluso fuera del árbol de widgets principal.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+/// Notificador de estado para el índice de la barra de navegación.
+///
+/// Gestiona y sincroniza el estado activo del `BottomNavigationBar` a lo largo 
+/// de toda la aplicación de manera global.
 final ValueNotifier<int> globalTabIndex = ValueNotifier<int>(0);
 
-/// Pushes a new route globally while preventing duplicate stacking.
+/// Empuja una nueva ruta globalmente previniendo el apilamiento duplicado.
 ///
-/// Evaluates the current navigation stack and pops intermediate routes
-/// to maintain a shallow stack depth and prevent memory bloat.
+/// Evalúa la pila de navegación actual y elimina las rutas secundarias intermedias
+/// para mantener la pila limpia, regresar al `MainNavigationScreen` raíz, y prevenir 
+/// el consumo excesivo de memoria por vistas superpuestas.
+///
+/// Parámetros:
+/// * [nombreRuta]: El identificador en texto de la ruta (ej. '/buscar').
+/// * [pantalla]: El widget que se va a renderizar en la pantalla.
 void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
   bool isAlreadyOnTop = false;
   
-  // Inspect the top-most route without mutating the navigation stack.
+  // Inspecciona la ruta superior sin mutar la pila de navegación.
   navigatorKey.currentState?.popUntil((route) {
     isAlreadyOnTop = route.settings.name == nombreRuta;
     return true; 
   });
 
-  // Abort if the target route is already actively displayed.
+  // Aborta si la ruta objetivo ya se está mostrando activamente.
   if (isAlreadyOnTop) return;
 
-  // Clear intermediate secondary routes to return to the root MainNavigationScreen.
+  // Limpia las rutas secundarias intermedias para volver al root.
   navigatorKey.currentState?.popUntil((route) => route.isFirst);
   
-  // Push the target route with its respective RouteSettings for future state checks.
+  // Empuja la nueva ruta con sus respectivos RouteSettings.
   navigatorKey.currentState?.push(
     MaterialPageRoute(
       settings: RouteSettings(name: nombreRuta),
@@ -44,13 +55,19 @@ void _abrirPantallaGlobal(String nombreRuta, Widget pantalla) {
   );
 }
 
+/// Punto de entrada principal de la aplicación Reportes ITL.
+///
+/// Se encarga de inicializar los bindings de Flutter, configurar los límites 
+/// estrictos de memoria caché para imágenes, preparar la ventana nativa en sistemas
+/// de escritorio (Windows, Linux, macOS), cargar el archivo `.env` y establecer
+/// la conexión con el backend asíncrono.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  PaintingBinding.instance.imageCache.maximumSize = 20; // Max of 20 load pictures to ram 
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 15; // 15 MB as maximum 
+  PaintingBinding.instance.imageCache.maximumSize = 20; // Máximo 20 imágenes en RAM
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 1024 * 1024 * 15; // 15 MB de tope
 
-  // Desktop platform window initialization.
+  // Inicialización de la ventana para plataformas de escritorio.
   if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
@@ -68,10 +85,10 @@ Future<void> main() async {
     });
   }
 
-  // Environment variables initialization.
+  // Inicialización de variables de entorno.
   await dotenv.load(fileName: "assets/.env");
 
-  // Supabase BaaS initialization.
+  // Inicialización del servicio BaaS de Supabase.
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
@@ -80,27 +97,35 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-// Singleton instance of the Supabase client.
+/// Instancia única (Singleton) del cliente de base de datos.
+///
+/// Se utiliza para realizar todas las transacciones y consultas a Supabase
+/// de manera global en la aplicación.
 final supabase = Supabase.instance.client;
 
+/// Widget raíz de la interfaz de usuario.
+///
+/// Configura el [MaterialApp], define el tema visual principal usando 
+/// `ColorScheme` y envuelve la aplicación en un [CallbackShortcuts] para 
+/// habilitar la navegación rápida mediante el teclado en entornos de escritorio.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Platform check to assign correct hardware modifier keys (Meta for macOS, Control otherwise).
+    // Verificación de plataforma para asignar modificadores correctos (Meta en macOS, Control en el resto).
     final bool isMac = !kIsWeb && Platform.isMacOS;
 
     return CallbackShortcuts(
       bindings: {
-        // Unmount current route.
+        // Desmontar la ruta actual (Cerrar modal/pantalla).
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (navigatorKey.currentState?.canPop() == true) {
             navigatorKey.currentState?.pop();
           }
         },
 
-        // Trigger global search view.
+        // Disparar la vista global de búsqueda.
         SingleActivator(LogicalKeyboardKey.keyF, control: !isMac, meta: isMac,includeRepeats: false): () {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
@@ -108,12 +133,12 @@ class MyApp extends StatelessWidget {
           _abrirPantallaGlobal('/buscar', const FilterScreen());
         },
 
-        // Trigger report creation view.
+        // Disparar la vista de creación de reportes.
         SingleActivator(LogicalKeyboardKey.keyN, control: !isMac, meta: isMac,includeRepeats: false): () {
           _abrirPantallaGlobal('/crear_reporte', const CreateReportScreen());
         },
 
-        // Navigate to root stack (Home).
+        // Navegar a la raíz principal (Inicio).
         SingleActivator(LogicalKeyboardKey.keyH, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst); 
           globalTabIndex.value = 0; 
@@ -123,7 +148,7 @@ class MyApp extends StatelessWidget {
           globalTabIndex.value = 0; 
         },
 
-        // Navigate to root stack (Profile).
+        // Navegar a la raíz principal (Perfil).
         SingleActivator(LogicalKeyboardKey.keyP, control: !isMac, meta: isMac,includeRepeats: false): () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
           globalTabIndex.value = 3; 

@@ -6,11 +6,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_screen.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
-/// A dedicated feed displaying only the reports authored by the active user.
+/// Pantalla dedicada a mostrar únicamente los reportes creados por el usuario activo.
 ///
-/// Inherits the visual presentation ([TarjetaReporteOptimizada]) and 
-/// pagination logic from [HomeScreen], but enforces a strict database 
-/// filter against the current user's UUID.
+/// Hereda la presentación visual ([TarjetaReporteOptimizada]) y la lógica de 
+/// paginación de [HomeScreen], pero impone un filtro estricto en la base de datos 
+/// para aislar y mostrar solo los registros que coinciden con el UUID del usuario actual.
 class MisReportesScreen extends StatefulWidget {
   const MisReportesScreen({super.key});
 
@@ -23,7 +23,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
   bool _isLoading = true;
   bool _bloqueoRecarga = false;
 
-    /// Pagination configuration parameters.
+  /// Parámetros de configuración para la paginación de la lista.
   int _rangoInicio = 0;
   final int _cantidadPorPagina = 15; 
   bool _hayMasDatos = true;
@@ -31,7 +31,10 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
 
   final ScrollController _scrollController = ScrollController();
 
-    /// Explicit Focus node to guarantee global hotkey interception on pushed routes.
+  /// Nodo de enfoque explícito.
+  /// 
+  /// Garantiza la intercepción de atajos de teclado globales (como actualizar 
+  /// o subir) cuando esta ruta es empujada sobre la pila de navegación.
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -47,10 +50,10 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     super.dispose();
   }
 
-  /// Smoothly animates the list back to the top offset.
+  /// Desplaza suavemente la lista de vuelta a la parte superior.
   /// 
-  /// Bound to hardware keyboard shortcuts (ArrowUp / Home) via [CallbackShortcuts].
-  
+  /// Se encuentra vinculada a los atajos de teclado de hardware (Flecha Arriba / Inicio) 
+  /// mediante el widget [CallbackShortcuts].
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -61,6 +64,10 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
     }
   }
 
+  /// Descarga el primer bloque de reportes pertenecientes al usuario.
+  ///
+  /// Realiza una consulta a Supabase aplicando un filtro explícito (`.eq`)
+  /// sobre la columna `usuario_id` para garantizar el aislamiento de datos.
   Future<void> _cargarMisReportes() async {
     if (_bloqueoRecarga) return;
     _bloqueoRecarga = true;
@@ -73,8 +80,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
       final supabase = Supabase.instance.client;
       final miUserId = supabase.auth.currentUser!.id;
 
-      // Notice the specific `.eq('usuario_id', miUserId)` filter ensuring 
-      // strict data isolation for the current session.
+      // Filtro estricto `.eq('usuario_id', miUserId)` para asegurar 
+      // el aislamiento de datos para la sesión actual.
       final response = await supabase.from('reportes').select('''
         id, titulo, estado, evidencia_url, reaccion_count, categoria_id,
         cat_categorias (id, nombre, icono, color),
@@ -90,19 +97,22 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
         setState(() {
           _misReportes = List<Map<String, dynamic>>.from(response);
           _isLoading = false;
-          // Halt pagination if the response size is smaller than the requested limit.
+          // Detiene la paginación si el tamaño de la respuesta es menor al límite solicitado.
           if (response.length < _cantidadPorPagina) _hayMasDatos = false;
         });
       }
     } catch (e) {
       debugPrint("Error al cargar mis reportes: $e");
       if (mounted) setState(() => _isLoading = false);
-    }finally {
-      _bloqueoRecarga = false; // Abrimos el candado
+    } finally {
+      _bloqueoRecarga = false; // Liberamos el candado de recarga
     }
   }
 
-  /// Fetches the subsequent payload of user reports (Pagination).
+  /// Descarga el siguiente bloque de reportes del usuario (Paginación).
+  ///
+  /// Se ejecuta al presionar el botón de "Cargar más" al final de la lista,
+  /// anexando los nuevos resultados a la colección existente.
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
 
@@ -142,7 +152,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Hardware evaluation to apply correct OS-level modifier keys.
+    // Evaluación de hardware para aplicar las teclas modificadoras correctas a nivel de SO.
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
     return CallbackShortcuts(
@@ -169,7 +179,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
                 : _misReportes.isEmpty
-                // Render empty state as ListView to preserve pull-to-refresh physics.
+                // Renderiza un estado vacío usando ListView para preservar las físicas del "Pull-to-refresh".
                     ? ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         children: const [
@@ -186,7 +196,7 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                         itemCount: _misReportes.length + 1, 
                         itemBuilder: (context, index) {
                           
-                          // Render pagination trigger at the end of the list.
+                          // Renderiza el disparador de paginación al final de la lista.
                           if (index == _misReportes.length) {
                             if (!_hayMasDatos) return const SizedBox.shrink();
                             
@@ -209,8 +219,8 @@ class _MisReportesScreenState extends State<MisReportesScreen> {
                           return TarjetaReporteOptimizada(
                             reporte: reporte,
                             onTap: () async {
-                              // Await the modal pop to automatically refresh the feed 
-                              // in case the user edited or deleted the report inside.
+                              // Espera a que se cierre el modal de detalles para refrescar 
+                              // automáticamente la vista en caso de que el usuario haya editado o eliminado el reporte.
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(

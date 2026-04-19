@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Manages the multi-step password recovery state machine.
+/// Gestiona la máquina de estados para la recuperación de contraseña.
 ///
-/// Implements a 3-phase authentication flow:
-/// 1. OTP (One-Time Password) dispatch via email.
-/// 2. Token verification.
-/// 3. Secure credential update.
+/// Implementa un flujo de autenticación seguro dividido en 3 fases:
+/// 1. Envío de código OTP (Contraseña de un solo uso) por correo electrónico.
+/// 2. Verificación del token ingresado por el usuario.
+/// 3. Actualización segura de las credenciales en la base de datos.
 class RecoveryScreen extends StatefulWidget {
-  /// Pre-fills the email input if routed directly from a failed login attempt.
+  /// Pre-llena la entrada de correo si se navega desde un intento previo en otra pantalla.
   final String? initialEmail;
 
   const RecoveryScreen({super.key, this.initialEmail});
@@ -25,19 +25,20 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
   static const String _dominio = "@correo.itlalaguna.edu.mx";
   
-  /// Tracks the current active phase of the recovery flow.
-  /// Valid states: 1 (Email Input), 2 (Token Input), 3 (New Password Input).
+  /// Rastrea la fase activa actual del flujo de recuperación.
+  /// 
+  /// Estados válidos: 1 (Ingreso de Correo), 2 (Ingreso de Token), 3 (Ingreso de Nueva Contraseña).
   int _pasoActual = 1; 
   
   bool _isLoading = false;
   
-  /// Toggles the visibility state of the password input fields.
+  /// Controla el estado de visibilidad de los campos de la contraseña.
   bool _obscurePassword = true; 
 
   @override
   void initState() {
     super.initState();
-    // UX Optimization: Auto-fill the email if inherited from previous screen.
+    // Optimización UX: Autocompleta el correo si se heredó de la pantalla anterior.
     if (widget.initialEmail != null && widget.initialEmail!.isNotEmpty) {
       _emailController.text = widget.initialEmail!;
     }
@@ -52,7 +53,11 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     super.dispose();
   }
 
-  /// Displays transient UI feedback for validation and network responses.
+  /// Muestra una alerta visual temporal (SnackBar) para retroalimentación.
+  ///
+  /// Parámetros:
+  /// * [msg]: El texto informativo a mostrar.
+  /// * [esError]: Cambia el color de fondo a rojo si es verdadero, verde si es falso.
   void _mostrarMensaje(String msg, {bool esError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -63,13 +68,13 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     );
   }
 
-  /// Sanitizes input and appends the default institutional domain if omitted.
+  /// Sanitiza la entrada del usuario y anexa el dominio institucional por defecto si se omite.
   String _obtenerEmailCompleto() {
     final input = _emailController.text.trim();
     return input.contains('@') ? input : input + _dominio;
   }
 
-  /// Phase 1: Requests a 8-digit OTP token from Supabase Auth to be sent via email.
+  /// Fase 1: Solicita a Supabase Auth un token OTP para ser enviado por correo.
   Future<void> _enviarCodigo() async {
     if (_emailController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa tu usuario.", esError: true);
@@ -82,7 +87,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       await Supabase.instance.client.auth.resetPasswordForEmail(emailFinal);
       
       _mostrarMensaje("Código enviado. Revisa tu correo institucional.");
-      // Transition to Phase 2 upon successful token dispatch.
+      // Transición a la Fase 2 tras el envío exitoso del token.
       setState(() => _pasoActual = 2);
     } on AuthException catch (e) {
       _mostrarMensaje(e.message, esError: true);
@@ -93,7 +98,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     }
   }
 
-  /// Phase 2: Validates the user-provided OTP token against Supabase Auth.
+  /// Fase 2: Valida el token OTP proporcionado por el usuario contra Supabase Auth.
   Future<void> _verificarCodigo() async {
     if (_tokenController.text.trim().isEmpty) {
       _mostrarMensaje("Por favor ingresa el código.", esError: true);
@@ -111,7 +116,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       );
 
       _mostrarMensaje("Código correcto. Ingresa tu nueva contraseña.");
-      // Transition to Phase 3 upon successful token validation.
+      // Transición a la Fase 3 tras la validación exitosa del token.
       setState(() => _pasoActual = 3);
     } on AuthException catch (_) {
       _mostrarMensaje("Código inválido o expirado", esError: true);
@@ -122,9 +127,9 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     }
   }
 
-  /// Phase 3: Commits the new password payload to the authenticated user profile.
+  /// Fase 3: Guarda la nueva contraseña en el perfil del usuario autenticado.
   Future<void> _actualizarPassword() async {
-    // Pre-flight local validations to prevent unnecessary network requests.
+    // Validaciones locales previas para evitar peticiones de red innecesarias.
     if (_passwordController.text.length < 6) {
       _mostrarMensaje("La contraseña debe tener al menos 6 caracteres.", esError: true);
       return;
@@ -143,7 +148,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
       if (mounted) {
         _mostrarMensaje("¡Contraseña actualizada con éxito!");
-        // Successfully complete the flow and return the email back to login.
+        // Completa el flujo exitosamente y devuelve el correo a la pantalla de login.
         Navigator.pop(context, _emailController.text.trim()); 
       }
     } on AuthException catch (e) {
@@ -162,7 +167,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         title: const Text("Recuperar Cuenta"),
         backgroundColor: const Color(0xFF800000),
         foregroundColor: Colors.white,
-        // Override back button behavior to pass state backwards
+        // Sobrescribe el comportamiento del botón de retroceso para pasar el estado hacia atrás
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, _emailController.text.trim()),
@@ -173,7 +178,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Visual progress indicator (Stepper)
+            // Indicador de progreso visual (Stepper)
             Row(
               children: [
                 _buildStep(1, "Correo"),
@@ -186,7 +191,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             const SizedBox(height: 40),
 
             // ==========================================
-            // UI PHASE 1: EMAIL INPUT
+            // UI FASE 1: INGRESO DE CORREO
             // ==========================================
             if (_pasoActual == 1) ...[
               const Icon(Icons.mark_email_read_outlined, size: 60, color: Color(0xFF800000)),
@@ -224,7 +229,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ],
 
             // ==========================================
-            // UI PHASE 2: TOKEN INPUT
+            // UI FASE 2: INGRESO DE TOKEN
             // ==========================================
             if (_pasoActual == 2) ...[
               const Icon(Icons.password, size: 60, color: Color(0xFF800000)),
@@ -264,7 +269,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             ],
 
             // ==========================================
-            // UI PHASE 3: NEW PASSWORD INPUT
+            // UI FASE 3: INGRESO DE NUEVA CONTRASEÑA
             // ==========================================
             if (_pasoActual == 3) ...[
               const Icon(Icons.lock_reset, size: 60, color: Colors.green),
@@ -334,7 +339,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     );
   }
 
-  /// Builds a visual node for the horizontal step indicator.
+  /// Construuye un nodo visual individual para el indicador de pasos horizontal.
   Widget _buildStep(int paso, String label) {
     bool activo = _pasoActual >= paso;
     return Column(

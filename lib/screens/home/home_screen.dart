@@ -9,6 +9,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart'; 
 import '../reportes/report_detail_screen.dart'; 
 
+/// Configura y gestiona la caché local para las imágenes de los reportes.
+///
+/// Implementa un [CacheManager] personalizado para almacenar las miniaturas de 
+/// evidencia en el dispositivo, limitando el almacenamiento a 50 objetos y 
+/// descartándolos automáticamente tras 7 días para no saturar la memoria.
 class GestorCacheReportes {
   static const key = 'reportesCacheKey';
   
@@ -23,14 +28,23 @@ class GestorCacheReportes {
   );
 }
 
+/// Pantalla principal que renderiza el panel de reportes.
+///
+/// Muestra un listado global de todas las incidencias creadas en el sistema,
+/// implementando paginación asíncrona, carga desde caché local (SharedPreferences)
+/// y un comportamiento reactivo.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  // AGREGAMOS EL OBSERVER AQUÍ
   State<HomeScreen> createState() => HomeScreenState(); 
 }
 
+/// Estado interno para [HomeScreen].
+///
+/// Extiende [WidgetsBindingObserver] para escuchar cambios en el ciclo de vida 
+/// de la aplicación (ej. cuando la app se minimiza y vuelve a abrirse), 
+/// manteniendo el control del teclado en entornos de escritorio.
 class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _reportes = [];
   bool _isLoading = true;
@@ -44,7 +58,10 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
-  // Agrega esto en HomeScreenState y ProfileScreenState
+  /// Solicita el enfoque primario para capturar eventos de teclado.
+  ///
+  /// Se asegura de que el widget esté montado en el árbol antes de pedir 
+  /// el foco para evitar excepciones de estado.
   void pedirFoco() {
     if (mounted && !_focusNode.hasFocus) {
       _focusNode.requestFocus();
@@ -54,19 +71,22 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Conectamos el observador
+    WidgetsBinding.instance.addObserver(this); 
     cargarReportes(); 
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Desconectamos el observador
+    WidgetsBinding.instance.removeObserver(this); 
     _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  // ESTA FUNCIÓN RECUPERA EL TECLADO CUANDO REGRESAS A LA APP
+  /// Responde a los cambios de estado en el sistema operativo.
+  ///
+  /// Recupera automáticamente el foco del teclado para los atajos globales 
+  /// cuando el usuario regresa a la aplicación (estado `resumed`).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -76,6 +96,7 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Desplaza suavemente la lista de reportes hasta la parte superior.
   void scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -86,6 +107,12 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Descarga y renderiza el primer bloque de reportes.
+  ///
+  /// 1. Lee la caché local para mostrar datos al instante y evitar pantalla en blanco.
+  /// 2. Realiza una petición a Supabase solicitando los últimos reportes con 
+  /// un join complejo para obtener autores, ubicaciones y categorías.
+  /// 3. Actualiza la UI y guarda el nuevo resultado en caché.
   Future<void> cargarReportes() async {
     if (_bloqueoRecarga) return; 
     _bloqueoRecarga = true;      
@@ -134,6 +161,10 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Anexa la siguiente página de resultados a la lista actual.
+  ///
+  /// Incrementa el paginador asíncronamente y desactiva el botón de carga 
+  /// si el servidor devuelve menos elementos de los solicitados.
   Future<void> _cargarMasReportes() async {
     if (_cargandoMas || !_hayMasDatos) return;
 
@@ -246,6 +277,10 @@ class HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
+/// Widget optimizado para representar un elemento individual en la lista de reportes.
+///
+/// Gestiona su propio cálculo estático de colores y mapeo de íconos para evitar
+/// sobrecargar el hilo principal (UI thread) durante desplazamientos rápidos (scrolling).
 class TarjetaReporteOptimizada extends StatelessWidget {
   final Map<String, dynamic> reporte;
   final VoidCallback onTap;
@@ -256,8 +291,13 @@ class TarjetaReporteOptimizada extends StatelessWidget {
     required this.onTap,
   });
 
+  /// Almacén estático para guardar la traducción de Hexadecimal a [Color].
   static final Map<String, Color> _colorCache = {};
 
+  /// Convierte una cadena hexadecimal en un color renderizable.
+  /// 
+  /// Si el color ya fue calculado previamente, lo recupera del caché en `O(1)`
+  /// ahorrando el costo de parseo en listas grandes.
   static Color _getColorFromHex(String? hexColor) {
     if (hexColor == null || hexColor.isEmpty) return Colors.grey;
     if (_colorCache.containsKey(hexColor)) return _colorCache[hexColor]!;
@@ -267,6 +307,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
     return color;
   }
 
+  /// Mapea el identificador en texto de la categoría hacia un [IconData] nativo.
   static IconData _getIconFromName(String? iconName) {
     switch (iconName) {
       case 'build': return Icons.build;
@@ -278,6 +319,7 @@ class TarjetaReporteOptimizada extends StatelessWidget {
     }
   }
 
+  /// Asigna un color semántico (Semaphoring) basado en el progreso del reporte.
   static Color _getColorEstado(String estado) {
     switch (estado.toLowerCase()) {
       case 'pendiente': return Colors.orange;

@@ -11,11 +11,12 @@ import 'home_screen.dart';
 import 'profile_screen.dart';
 import '../reportes/create_report_screen.dart';
 
-/// Root application shell after authentication.
+/// Contenedor principal (Shell) de la aplicación tras la autenticación.
 ///
-/// Manages the primary [BottomNavigationBar] and preserves the state of 
-/// the main feed ([HomeScreen]) and user profile ([ProfileScreen]) 
-/// using an [IndexedStack] to prevent unnecessary widget rebuilds.
+/// Gestiona la barra de navegación inferior primaria (`BottomNavigationBar`) y 
+/// preserva el estado del panel principal ([HomeScreen]) y el perfil del usuario 
+/// ([ProfileScreen]) utilizando un [IndexedStack] para prevenir reconstrucciones
+/// innecesarias del árbol de widgets.
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -26,8 +27,8 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _indiceActual = 0;
   
-  /// GlobalKeys used to delegate hardware keyboard events (like 'Refresh' or 'Scroll to Top')
-  /// down to the active child states.
+  /// GlobalKeys utilizadas para delegar eventos de teclado (como "Actualizar" o "Subir")
+  /// hacia los estados hijos activos correspondientes.
   final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
   final GlobalKey<ProfileScreenState> _profileKey = GlobalKey<ProfileScreenState>();
 
@@ -35,7 +36,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String _rolUsuario = '';
   String? _avatarUrl;
 
-  // Variables para el monitor de red
   late StreamSubscription<InternetStatus> _suscripcionInternet;
   bool _tieneInternet = true;
   bool _esPrimerArranque = true;
@@ -45,29 +45,32 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     _cargarDatosUsuario();
 
-    // --- Monitor de Internet Real (Hardware + Ping) ---
+    // Inicia el monitor de internet real (Hardware + Ping).
     _suscripcionInternet = InternetConnection().onStatusChange.listen(_estadoRedCambio);
 
-    // Sync local navigation state with global keyboard shortcut events.
+    // Sincroniza el estado de navegación local con los atajos de teclado globales.
     globalTabIndex.addListener(() {
       if (mounted && (globalTabIndex.value == 0 || globalTabIndex.value == 3)) {
-        _cambiarPestana(globalTabIndex.value); // Cambiado a la nueva función centralizada
+        _cambiarPestana(globalTabIndex.value); 
       }
     });
   }
 
   @override
   void dispose() {
-    _suscripcionInternet.cancel(); // Evita fugas de memoria
+    _suscripcionInternet.cancel(); 
     super.dispose();
   }
 
-  // --- NUEVA FUNCIÓN DIRECTORA ---
+  /// Gestiona de manera centralizada la transición entre pestañas y captura del foco.
+  ///
+  /// Parámetros:
+  /// * [nuevoIndice]: El índice de la pestaña de destino en la barra de navegación.
   void _cambiarPestana(int nuevoIndice) {
     setState(() => _indiceActual = nuevoIndice);
     globalTabIndex.value = nuevoIndice;
 
-    // Esperamos a que Flutter termine de dibujar el cambio de pestaña y luego delegamos el foco
+    // Espera a que Flutter termine de dibujar el cambio de pestaña para delegar el foco asíncronamente.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (nuevoIndice == 0) {
         _homeKey.currentState?.pedirFoco();
@@ -77,7 +80,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
-  /// Lógica del Banner de Conexión
+  /// Evalúa y notifica visualmente los cambios en el estado de conexión de red.
+  ///
+  /// Muestra un banner material de advertencia cuando se pierde la conexión
+  /// y un SnackBar de confirmación cuando se restaura, silenciándose 
+  /// inteligentemente durante el arranque inicial.
   void _estadoRedCambio(InternetStatus status) {
     final hayConexion = status == InternetStatus.connected;
 
@@ -85,12 +92,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       if (mounted) setState(() => _tieneInternet = hayConexion);
 
       if (!hayConexion) {
-        // Mostrar Banner Rojo
+        // Muestra banner rojo de desconexión.
         ScaffoldMessenger.of(context).clearMaterialBanners();
 
         ScaffoldMessenger.of(context).showMaterialBanner(
           MaterialBanner(
-            backgroundColor: const Color(0xFF800000), // Guinda ITL
+            backgroundColor: const Color(0xFF800000), 
             leading: const Icon(Icons.wifi_off, color: Colors.white),
             content: const Text(
               "Sin conexión a Internet. Verifica tu red.",
@@ -105,7 +112,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         );
       } else {
-        // Ocultar Banner Rojo y mostrar SnackBar Verde (solo si no es el primer arranque)
+        // Oculta banner rojo y muestra SnackBar verde (solo si no es el primer arranque).
         ScaffoldMessenger.of(context).clearMaterialBanners();
         if (!_esPrimerArranque) {
 
@@ -130,7 +137,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _esPrimerArranque = false;
   }
 
-  /// Fetches basic user metadata to populate the profile tab reactively.
+  /// Obtiene de manera asíncrona los metadatos básicos del usuario.
+  ///
+  /// Puebla la pestaña del perfil de manera reactiva extrayendo el nombre, 
+  /// rol y avatar desde Supabase.
   Future<void> _cargarDatosUsuario() async {
     try {
       final supabase = Supabase.instance.client;
@@ -156,8 +166,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
 
-  /// Intercepts the back button at the root level to prevent accidental 
-  /// app closures, requiring explicit user confirmation.
+  /// Intercepta el botón físico de retroceso a nivel de la raíz.
+  ///
+  /// Previene el cierre accidental de la aplicación requiriendo una 
+  /// confirmación explícita mediante un cuadro de diálogo del sistema.
   Future<void> _salirDeLaApp() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -192,7 +204,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Maps the 4-item NavigationBar index to the 2-item IndexedStack.
+    // Mapea el índice de 4 elementos de la NavigationBar al IndexedStack de 2 elementos.
     int stackIndex = _indiceActual == 3 ? 1 : 0;
     
     return PopScope(
@@ -228,16 +240,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 context,
                 MaterialPageRoute(builder: (context) => const FilterScreen()),
               );
-              _cambiarPestana(_indiceActual); // Recuperar foco en pestaña actual
+              _cambiarPestana(_indiceActual); 
             } else if (index == 2) {
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const CreateReportScreen()),
               );
               _homeKey.currentState?.cargarReportes();
-              _cambiarPestana(0); // Volver al Home y pedir foco
+              _cambiarPestana(0); 
             } else {
-              _cambiarPestana(index); // Cambio de pestaña normal
+              _cambiarPestana(index); 
             }
           },
           backgroundColor: Colors.white,

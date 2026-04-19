@@ -3,10 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/login_screen.dart'; 
 import '../home/main_navigation_screen.dart'; 
 
-/// Initial application entry point for session resolution.
+/// Pantalla inicial de carga y resolución de sesión.
 ///
-/// Displays a branding screen while verifying the presence of an active 
-/// Supabase authentication token to determine the initial routing flow.
+/// Muestra la identidad visual de la aplicación (branding) mientras verifica 
+/// la existencia de un token de autenticación activo en Supabase para 
+/// determinar el flujo de enrutamiento inicial del usuario.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -21,18 +22,19 @@ class _SplashScreenState extends State<SplashScreen> {
     _verificarSesion();
   }
 
-  /// Evaluates the current authentication state.
+  /// Evalúa el estado actual de la autenticación del usuario.
   ///
-  /// Introduces an artificial delay to prevent UI flickering on fast devices, 
-  /// ensuring the branding is visible. Routes to [MainNavigationScreen] if 
-  /// a valid session exists, otherwise redirects to [LoginScreen].
+  /// Introduce un retraso artificial para evitar parpadeos en la interfaz 
+  /// (UI flickering) en dispositivos rápidos, asegurando que la pantalla de 
+  /// carga sea visible. Navega hacia [MainNavigationScreen] si existe una sesión 
+  /// válida; de lo contrario, redirige a [LoginScreen].
   Future<void> _verificarSesion() async {
-    // Artificial delay for UX/branding purposes.
+    // Retraso artificial por motivos de experiencia de usuario (UX) y branding.
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
-    // Retrieve active session from the local Supabase GoTrue client.
+    // Recupera la sesión activa desde el cliente local GoTrue de Supabase.
     final session = Supabase.instance.client.auth.currentSession;
 
     if (session != null) {

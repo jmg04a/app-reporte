@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart'; 
 import 'resultados_busqueda_screen.dart'; 
 
-/// Search and filtering interface for the report catalog.
+/// Interfaz de búsqueda y filtrado para el catálogo de reportes.
 ///
-/// Acts as a query parameter builder. Aggregates multiple state variables
-/// (text, foreign keys, enums) into a unified filter payload, which is then 
-/// passed to the [ResultadosBusquedaScreen] for execution.
+/// Actúa como un constructor de parámetros de consulta. Agrupa múltiples variables 
+/// de estado (texto, llaves foráneas, enumeradores) en un paquete de filtros 
+/// unificado, que luego se pasa a la pantalla [ResultadosBusquedaScreen] para su ejecución.
 class FilterScreen extends StatefulWidget {
   const FilterScreen({super.key});
 
@@ -17,18 +17,18 @@ class FilterScreen extends StatefulWidget {
 }
 
 class _FilterScreenState extends State<FilterScreen> {
-  // --- Text-based Filters ---
+  // --- Filtros basados en texto ---
   final _usuarioController = TextEditingController();
   final _tituloController = TextEditingController();
 
-  // --- Relational Dictionaries ---
+  // --- Diccionarios Relacionales ---
   List<Map<String, dynamic>> _categorias = [];
   List<Map<String, dynamic>> _lugares = [];
   List<Map<String, dynamic>> _carreras = []; 
   
   bool _isLoadingData = true;
 
-  // --- Active Filter States ---
+  // --- Estados de los Filtros Activos ---
   int? _selectedCategoriaId;
   int? _selectedLugarId;
   int? _selectedCarreraId; 
@@ -36,7 +36,7 @@ class _FilterScreenState extends State<FilterScreen> {
   String _selectedEstado = 'todos';
   String _selectedOrdenReacciones = 'recientes';
 
-  // --- Autocomplete State ---
+  // --- Estado del Autocompletado ---
   String _lugarTextoActual = '';
   Key _autocompleteKey = UniqueKey();
 
@@ -46,14 +46,15 @@ class _FilterScreenState extends State<FilterScreen> {
     _cargarCatalogos();
   }
 
-  /// Bootstraps the form by concurrently fetching all required foreign key dictionaries.
+  /// Inicializa el formulario recuperando de forma concurrente todos los diccionarios de llaves foráneas.
   ///
-  /// Implements an Optimistic UI approach by rendering cached dictionaries instantly 
-  /// before fetching the fresh catalog from Supabase.
+  /// Implementa un enfoque de Interfaz de Usuario Optimista (Optimistic UI) 
+  /// renderizando los diccionarios en caché de manera instantánea antes de 
+  /// descargar el catálogo fresco desde Supabase.
   Future<void> _cargarCatalogos() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // 1. Hydrate from local cache
+    // 1. Hidratar desde la caché local
     final catsCache = prefs.getString('categorias_cache');
     final lugsCache = prefs.getString('lugares_cache');
     final carrsCache = prefs.getString('carreras_cache');
@@ -68,7 +69,7 @@ class _FilterScreenState extends State<FilterScreen> {
     try {
       final supabase = Supabase.instance.client;
       
-      // 2. Fetch all dictionaries concurrently to prevent network waterfalls
+      // 2. Descargar todos los diccionarios de forma concurrente para evitar cascadas de red (waterfalls)
       final respuestas = await Future.wait([
         supabase.from('cat_categorias').select('id, nombre').order('nombre'),
         supabase.from('cat_lugares').select('id, nombre, tipo, parent_id').order('nombre'),
@@ -79,22 +80,23 @@ class _FilterScreenState extends State<FilterScreen> {
       final lugsNube = respuestas[1];
       final carrsNube = respuestas[2];
 
-      // 3. Persist fresh data back to local storage
+      // 3. Persistir los datos frescos de vuelta al almacenamiento local
       prefs.setString('categorias_cache', jsonEncode(catsNube));
       prefs.setString('lugares_cache', jsonEncode(lugsNube));
       prefs.setString('carreras_cache', jsonEncode(carrsNube));
 
       _procesarYMostrarCatalogos(catsNube, lugsNube, carrsNube);
     } catch (e) {
-      // Fallback: If network fails and cache is empty, stop the loading spinner
+      // Respaldo: Si la red falla y el caché está vacío, detener el indicador de carga
       if (mounted && _categorias.isEmpty) setState(() => _isLoadingData = false);
     }
   }
 
-  /// Flattens the hierarchical location data into a 1D searchable array.
+  /// Aplana los datos jerárquicos de ubicación en un arreglo unidimensional (1D) buscable.
   /// 
-  /// Resolves the 'parent_id' relationship to append the parent building name
-  /// to specific rooms (e.g., "Aula 3" becomes "Aula 3 (Sistemas)") for better UX.
+  /// Resuelve la relación de la llave `parent_id` para anexar el nombre del 
+  /// edificio principal a las aulas específicas (ej. "Aula 3" se convierte en 
+  /// "Aula 3 (Sistemas)") para mejorar la experiencia del usuario (UX).
   void _procesarYMostrarCatalogos(List<dynamic> catsRaw, List<dynamic> lugsRaw, List<dynamic> carrsRaw) {
     List<Map<String, dynamic>> lugaresFormateados = [];
     
@@ -131,9 +133,12 @@ class _FilterScreenState extends State<FilterScreen> {
     }
   }
 
-  /// Compiles the active state into a unified payload and triggers navigation.
+  /// Compila el estado activo en un paquete de datos unificado y activa la navegación.
+  ///
+  /// Valida de forma estricta que el lugar escrito por el usuario corresponda a un ID 
+  /// válido en los catálogos antes de iniciar la búsqueda.
   void _aplicar() {
-    // Validation: Ensure the typed location actually maps to a valid foreign key ID
+    // Validación: Asegurar que la ubicación tipeada mapee a un ID válido de llave foránea
     if (_selectedLugarId == null && _lugarTextoActual.trim().isNotEmpty) {
       final matchExacto = _lugares.where((l) =>
           l['nombreBuscable'].toString().toLowerCase() == _lugarTextoActual.trim().toLowerCase()).toList();
@@ -148,7 +153,7 @@ class _FilterScreenState extends State<FilterScreen> {
       }
     }
 
-    // Construction of the query payload
+    // Construcción del paquete de consulta (payload)
     final filtros = {
       'usuario': _usuarioController.text.trim(),
       'titulo': _tituloController.text.trim(),
@@ -159,7 +164,7 @@ class _FilterScreenState extends State<FilterScreen> {
       'ordenReacciones': _selectedOrdenReacciones,
     };
     
-    // Imperative routing to the results view, replacing the current route
+    // Enrutamiento imperativo a la vista de resultados, reemplazando la ruta actual
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -168,7 +173,7 @@ class _FilterScreenState extends State<FilterScreen> {
     );
   }
 
-  /// Prompts for confirmation before executing a full state wipe.
+  /// Solicita confirmación al usuario antes de ejecutar un borrado total del estado.
   Future<void> _confirmarLimpiar() async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -200,7 +205,7 @@ class _FilterScreenState extends State<FilterScreen> {
     }
   }
 
-  /// Resets all form controllers and active state variables to their default values.
+  /// Restablece todos los controladores del formulario y variables de estado a sus valores por defecto.
   void _limpiar() {
     setState(() {
       _usuarioController.clear();
@@ -212,15 +217,15 @@ class _FilterScreenState extends State<FilterScreen> {
       _selectedOrdenReacciones = 'recientes';
       _lugarTextoActual = '';
       
-      // Forcing a new UniqueKey ensures the Autocomplete widget fully rebuilds and clears its internal state.
+      // Forzar una nueva UniqueKey asegura que el widget Autocomplete se reconstruya completamente y limpie su estado interno.
       _autocompleteKey = UniqueKey(); 
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // --- Defensive Checks ---
-    // Ensure selected IDs actually exist in the fetched dictionaries to prevent crash on Dropdown rendering.
+    // --- Verificaciones Defensivas ---
+    // Asegurar que los IDs seleccionados existan realmente en los diccionarios recuperados para evitar colapsos al renderizar el Dropdown.
     bool categoriaExiste = _selectedCategoriaId == null || _categorias.any((c) => c['id'] == _selectedCategoriaId);
     int? safeCategoriaId = categoriaExiste ? _selectedCategoriaId : null;
 
@@ -311,7 +316,7 @@ class _FilterScreenState extends State<FilterScreen> {
                           hintText: "Ej. 19, Sistemas, Aula 3",
                           prefixIcon: const Icon(Icons.location_on),
                           border: const OutlineInputBorder(),
-                          // Clear button inside the Autocomplete text field
+                          // Botón de limpieza dentro del campo de Autocompletado
                           suffixIcon: _selectedLugarId != null || _lugarTextoActual.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, color: Colors.grey),

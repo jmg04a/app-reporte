@@ -6,11 +6,12 @@ import '../auth/recovery_screen.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Entry point for user authentication.
+/// Pantalla inicial para la autenticación de usuarios.
 /// 
-/// Handles credential validation via Supabase Auth and implements 
-/// a domain-completion UX strategy for the institutional email.
-/// Automatically synchronizes the email input field with child routes.
+/// Gestiona la validación de credenciales a través de Supabase Auth e 
+/// implementa una estrategia de experiencia de usuario (UX) para el 
+/// autocompletado del dominio institucional. Sincroniza automáticamente 
+/// el campo de correo con las rutas secundarias (recuperación y registro).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -22,18 +23,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usuarioController = TextEditingController(); 
   final _passwordController = TextEditingController();
   
-  /// Institutional domain suffix appended automatically if the user omits it.
+  /// Sufijo del dominio institucional que se añade automáticamente si el usuario lo omite.
   static const String _dominio = "@correo.itlalaguna.edu.mx";
 
   bool _isLoading = false;
 
-  /// Toggles the visibility state of the password input field.
+  /// Controla el estado de visibilidad del campo de la contraseña.
   bool _obscurePassword = true; 
 
-  /// Displays transient UI feedback for authentication errors.
+  /// Muestra una alerta visual temporal (SnackBar) para retroalimentación de errores.
   /// 
-  /// Guarded with [mounted] check to prevent exceptions if the widget 
-  /// is disposed before the SnackBar can be rendered.
+  /// Utiliza un bloque [mounted] para prevenir excepciones en caso de que el 
+  /// widget sea destruido antes de que el SnackBar pueda renderizarse en pantalla.
   void _mostrarError(String mensaje) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -41,19 +42,19 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Orchestrates the sign-in flow.
+  /// Orquesta el flujo completo de inicio de sesión.
   /// 
-  /// 1. Sanitizes user input and handles domain completion.
-  /// 2. Authenticates via Supabase Auth.
-  /// 3. Prefetches user metadata into SharedPreferences for offline availability.
-  /// 4. Routes to the main application shell upon success.
+  /// 1. Sanitiza la entrada del usuario y maneja el autocompletado del dominio.
+  /// 2. Autentica las credenciales mediante Supabase Auth.
+  /// 3. Precarga los metadatos del usuario en caché (`SharedPreferences`) para disponibilidad offline.
+  /// 4. Navega hacia la estructura principal de la aplicación (`MainNavigationScreen`) en caso de éxito.
   Future<void> _iniciarSesion() async {
     setState(() => _isLoading = true);
     try {
       final inputUsuario = _usuarioController.text.trim();
 
-      // UX Optimization: Automatically append the institutional domain if the 
-      // user only inputs their username/control number.
+      // Optimización UX: Agrega el dominio institucional automáticamente si el 
+      // usuario solo ingresó su nombre de usuario/número de control.
       final emailCompleto = inputUsuario.contains('@') 
       ? inputUsuario 
       : inputUsuario + _dominio; 
@@ -63,8 +64,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text,
       );
 
-      // Prefetch user profile data before routing to prevent layout shifts 
-      // or "loading" states on the subsequent screens.
+      // Precarga los datos del perfil antes de navegar para evitar saltos en el 
+      // diseño (layout shifts) o pantallas de carga en las vistas subsecuentes.
       await _guardarPerfilEnCache(response.user!.id);
 
       if (!mounted) return;
@@ -74,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       
     } on AuthException catch (e) {
-      // Map Supabase generic errors to user-friendly Spanish messages.
+      // Mapea los errores genéricos de Supabase a mensajes amigables en español.
       if (e.message.contains("Email not confirmed")) {
         _mostrarError("¡Aún no confirmas tu correo! Revisa tu bandeja.");
       } else if (e.message.contains("Invalid login credentials")) {
@@ -89,13 +90,13 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Downloads essential user metadata from the 'perfiles' table and persists 
-  /// it locally using SharedPreferences.
+  /// Descarga los metadatos esenciales del usuario desde la tabla 'perfiles' y los 
+  /// persiste localmente utilizando `SharedPreferences`.
   Future<void> _guardarPerfilEnCache(String userId) async {
     try {
       final supabase = Supabase.instance.client;
       
-      // Perform a join with 'estudiantes' to fetch the control number if applicable.
+      // Realiza un join con 'estudiantes' para obtener el número de control si aplica.
       final perfil = await supabase
           .from('perfiles')
           .select('nombre, avatar_url, estudiantes(numero_control)')
@@ -105,7 +106,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('usuario_perfil', jsonEncode(perfil));
     } catch (e) {
-      // Silent fail: If cache fails, the ProfileScreen is built to fetch fresh data anyway.
+      // Falla silenciosa: Si la caché falla, la vista ProfileScreen está diseñada 
+      // para recuperar datos frescos directamente del servidor de todos modos.
       debugPrint("Error guardando caché del perfil: $e");
     }
   }
@@ -155,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   labelText: "Contraseña",
                   prefixIcon: const Icon(Icons.lock_outline),
                   border: const OutlineInputBorder(),
-                  // Implementation identical to RecoveryScreen for password visibility
+                  // Implementación idéntica a RecoveryScreen para la visibilidad de la contraseña.
                   suffixIcon: IconButton(
                     icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                     onPressed: () {
@@ -170,14 +172,14 @@ class _LoginScreenState extends State<LoginScreen> {
               
               const SizedBox(height: 10),
 
-              // Password recovery flow entry point.
+              // Punto de entrada al flujo de recuperación de contraseña.
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () async {
                     final correoEscrito = _usuarioController.text.trim();
                     
-                    // Await the potentially updated email from the RecoveryScreen
+                    // Espera el correo potencialmente actualizado desde RecoveryScreen.
                     final correoRegresado = await Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -185,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     );
 
-                    // Sync state if the user typed a new email there
+                    // Sincroniza el estado si el usuario escribió un nuevo correo allá.
                     if (correoRegresado != null && correoRegresado is String) {
                       _usuarioController.text = correoRegresado;
                     }
@@ -220,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () async {
                         final correoEscrito = _usuarioController.text.trim();
 
-                        // Await the potentially updated email from the RegisterScreen
+                        // Espera el correo potencialmente actualizado desde RegisterScreen.
                         final correoRegresado = await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -228,7 +230,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         );
 
-                        // Sync state if the user typed a new email there
+                        // Sincroniza el estado si el usuario escribió un nuevo correo allá.
                         if (correoRegresado != null && correoRegresado is String) {
                           _usuarioController.text = correoRegresado;
                         }

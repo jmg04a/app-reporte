@@ -9,14 +9,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image/image.dart' as img;
 
-/// Dual-purpose form interface for report creation and modification.
+/// Interfaz de formulario de doble propósito para la creación y modificación de reportes.
 ///
-/// Implements draft auto-saving via [SharedPreferences] for creation mode, 
-/// and state hydration for modification mode when passed a [reporteExistente].
-/// Handles image picking, payload construction, and binary uploads to Supabase Storage.
+/// Implementa el autoguardado de borradores mediante [SharedPreferences] para el 
+/// modo de creación, y la hidratación de estado para el modo de modificación 
+/// cuando se recibe un [reporteExistente]. Gestiona la selección de imágenes, 
+/// la construcción del paquete de datos (payload) y las subidas binarias a Supabase Storage.
 class CreateReportScreen extends StatefulWidget {
-  /// The existing report payload. If provided, the UI enters "Edit Mode".
-  /// If null, the UI defaults to "Create Mode".
+  /// Los datos del reporte existente. Si se proporciona, la interfaz entra en "Modo Edición".
+  /// Si es nulo, la interfaz adopta por defecto el "Modo Creación".
   final Map<String, dynamic>? reporteExistente;
 
   const CreateReportScreen({super.key, this.reporteExistente});
@@ -29,10 +30,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
 
-  /// Prevents double-submissions during network requests.
+  /// Previene envíos múltiples o duplicados durante las peticiones de red.
   bool _isSubmitting = false; 
   
-  /// Blocks the UI rendering until required catalog dictionaries are loaded.
+  /// Bloquea el renderizado de la interfaz hasta que se carguen los diccionarios de catálogo requeridos.
   bool _isLoadingData = true; 
 
   List<Map<String, dynamic>> _categorias = [];
@@ -47,11 +48,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   XFile? _imagenSeleccionada;
   final ImagePicker _picker = ImagePicker();
 
-  /// State flags for image modification during Edit Mode.
+  /// Banderas de estado para la modificación de la imagen durante el Modo Edición.
   String? _imagenViejaUrl;
   bool _eliminoImagenVieja = false;
 
-  /// Computed property to determine current execution mode.
+  /// Propiedad calculada (Getter) para determinar el modo de ejecución actual.
   bool get _esEdicion => widget.reporteExistente != null;
 
   @override
@@ -71,7 +72,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     super.dispose();
   }
 
-  /// Bootstraps the form by loading required catalog dictionaries (Categories and Locations).
+  /// Inicializa el formulario cargando los diccionarios de catálogos requeridos (Categorías y Lugares).
   Future<void> _cargarDatosIniciales() async {
     final prefs = await SharedPreferences.getInstance();
     final catsCache = prefs.getString('categorias_cache');
@@ -348,7 +349,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// Opens a Bottom Sheet for location selection.
+  /// Abre un menú inferior (Bottom Sheet) para la selección interactiva de lugares.
   void _abrirBuscadorDeLugares() {
     String filtroLocal = '';
 
@@ -602,7 +603,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               const Text("Ubicación del problema", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 15),
               
-              // Aquí entra el nuevo InkWell + InputDecorator en lugar del Autocomplete
+              // Uso del InkWell + InputDecorator interactivo para el Bottom Sheet en lugar de Autocomplete
               InkWell(
                 onTap: _abrirBuscadorDeLugares,
                 borderRadius: BorderRadius.circular(4),

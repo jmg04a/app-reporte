@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Importado para atajos de teclado
+import 'package:flutter/services.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
@@ -11,6 +11,12 @@ import 'dart:io';
 import 'package:flutter/foundation.dart'; 
 import 'package:image/image.dart' as img;
 
+/// Interfaz para la visualización y edición del perfil del usuario.
+///
+/// Gestiona la información de la cuenta (Nombre, Correo, Carrera, Avatar).
+/// Permite editar datos personales sincronizándolos tanto en la base de datos 
+/// (Supabase) como en la caché local (`SharedPreferences`), además de servir 
+/// como punto de entrada hacia la gestión de sesión y el historial personal de reportes.
 class ProfileScreen extends StatefulWidget {
   final String nombre;
   final String rol; 
@@ -29,10 +35,14 @@ class ProfileScreen extends StatefulWidget {
   });
 
   @override
-  // AGREGAMOS EL OBSERVER AQUÍ
   State<ProfileScreen> createState() => ProfileScreenState();
 }
 
+/// Estado interno para [ProfileScreen].
+///
+/// Implementa [WidgetsBindingObserver] para manejar el ciclo de vida del sistema
+/// y recuperar el foco del teclado globalmente, permitiendo navegar la app 
+/// con atajos de teclado sin perder el control en entornos de escritorio.
 class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserver {
   String? _currentAvatarUrl;
   String _nombreActual = ''; 
@@ -50,11 +60,14 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
   String _nombreCarreraActual = 'Cargando carrera...';
   List<Map<String, dynamic>> _carreras = [];
 
-  // CONTROLADORES FALTANTES AGREGADOS
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
-  // Agrega esto en HomeScreenState y ProfileScreenState
+  /// Solicita explícitamente el foco del sistema.
+  ///
+  /// Es invocada externamente por `MainNavigationScreen` cuando el usuario 
+  /// cambia a esta pestaña, garantizando que el widget esté listo para 
+  /// interceptar atajos de teclado de forma inmediata.
   void pedirFoco() {
     if (mounted && !_focusNode.hasFocus) {
       _focusNode.requestFocus();
@@ -64,7 +77,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Conectamos el observador
+    WidgetsBinding.instance.addObserver(this); 
     _nombreActual = widget.nombre;
     _currentAvatarUrl = widget.avatarUrl;
     
@@ -76,13 +89,13 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Desconectamos el observador
+    WidgetsBinding.instance.removeObserver(this); 
     _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  // ESTA FUNCIÓN RECUPERA EL TECLADO CUANDO REGRESAS A LA APP
+  /// Recupera el teclado tras volver del modo inactivo (background).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -92,6 +105,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Desplaza la vista a la posición inicial.
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -102,11 +116,13 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Secuencia el arranque de datos, priorizando velocidad visual.
   Future<void> _inicializarPantalla() async {
     await _cargarPerfilDesdeCache();
     await cargarPerfilFresco();
   }
 
+  /// Renderiza la UI instantáneamente usando la última versión guardada del perfil.
   Future<void> _cargarPerfilDesdeCache() async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -134,6 +150,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Sincroniza en segundo plano los datos del servidor con el caché local.
   Future<void> cargarPerfilFresco() async {
     if (_bloqueoRecarga) return; 
     _bloqueoRecarga = true;
@@ -206,6 +223,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Muestra un modal de selección para modificar la carrera del estudiante.
   Future<void> _cambiarCarrera() async {
     if (_carreras.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cargando catálogo de carreras, espera un segundo...")));
@@ -286,6 +304,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Muestra un modal con entrada de texto para renombrar el perfil del usuario.
   Future<void> _cambiarNombre() async {
     final controller = TextEditingController(text: _nombreActual);
     
@@ -358,6 +377,11 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Selecciona una imagen, la comprime y la sube al Storage (Bucket) del servidor.
+  ///
+  /// Implementa procesamiento nativo de imágenes (`image` package) en entornos 
+  /// de escritorio (Windows/Mac/Linux) para forzar un ancho máximo de 540px 
+  /// antes de subir la carga útil a Supabase, optimizando el ancho de banda.
   Future<void> _cambiarFoto() async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
@@ -434,6 +458,11 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
     }
   }
 
+  /// Destruye la sesión activa del usuario.
+  ///
+  /// Elimina los tokens de autenticación remotos y purga las llaves internas 
+  /// en `SharedPreferences` para garantizar la privacidad de los datos locales 
+  /// antes de devolver al usuario a la pantalla de inicio de sesión.
   Future<void> _cerrarSesion(BuildContext context) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -480,7 +509,6 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
   Widget build(BuildContext context) {
     final bool isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
 
-    // ENVOLVEMOS EL SCAFFOLD PARA CAPTURAR LOS ATAJOS
     return CallbackShortcuts(
       bindings: {
         SingleActivator(LogicalKeyboardKey.keyR, control: !isApple, meta: isApple, includeRepeats: false): cargarPerfilFresco,
@@ -505,7 +533,7 @@ class ProfileScreenState extends State<ProfileScreen> with WidgetsBindingObserve
             child: _isLoading 
               ? const Center(child: CircularProgressIndicator(color: Color(0xFF800000)))
               : SingleChildScrollView(
-                  controller: _scrollController, // CONECTAMOS EL SCROLL CONTROLLER AQUÍ
+                  controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
