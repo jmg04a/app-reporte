@@ -27,7 +27,7 @@ El sistema está construido con una arquitectura moderna y escalable, enfocada e
 Antes de ejecutar el proyecto, asegúrate de tener instalado:
 1. Flutter SDK (Última versión estable)
 2. Dart SDK
-3. Un archivo `.env` en la raíz del proyecto con las credenciales de Supabase:
+3. Un archivo `.env` en la carpeta de assets del proyecto con las credenciales de Supabase:
    ```env
    SUPABASE_URL=tu_url_aqui
    SUPABASE_ANON_KEY=tu_clave_aqui
