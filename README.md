@@ -65,7 +65,7 @@ Para levantar tu propio entorno en Supabase, ejecuta los scripts dentro de la ca
 El proyecto se encuentra en constante evolución. Las siguientes tareas están planeadas para futuras versiones:
 
 - [ ] **Diccionario de Errores:** Centralizar el manejo de excepciones para traducir errores técnicos de Supabase a mensajes genéricos y amigables para el usuario final.
-- [ ] **Atajos Avanzados:** Implementar soporte extendido de atajos de teclado (Shortcuts) dedicados para la versión de escritorio (Windows, macOS, Linux).
+- [x] **Atajos Avanzados:** Implementar soporte extendido de atajos de teclado (Shortcuts) dedicados para la versión de escritorio (Windows, macOS, Linux).
 - [ ] **Modularización de BD:** Refactorizar la arquitectura para abstraer la conexión y consultas de Supabase en repositorios o servicios modulares.
 - [ ] **Pantalla de Ajustes:** Crear un menú de configuración para manejar preferencias locales de la aplicación.
 - [ ] **Dark Mode:** Soporte nativo para Tema Oscuro y opciones de personalización de la paleta de colores.
