@@ -81,6 +81,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       return;
     }
 
+    FocusScope.of(context).unfocus();
+
     setState(() => _isLoading = true);
     try {
       final emailFinal = _obtenerEmailCompleto();
@@ -104,6 +106,8 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
       _mostrarMensaje("Por favor ingresa el código.", esError: true);
       return;
     }
+
+    FocusScope.of(context).unfocus();
 
     setState(() => _isLoading = true);
     try {
@@ -204,6 +208,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               const SizedBox(height: 30),
               TextField(
                 controller: _emailController,
+                keyboardType: TextInputType.emailAddress, 
                 decoration: const InputDecoration(
                   labelText: "Correo institucional",
                   helperText: "Se agregará automáticamente @correo.itlalaguna.edu.mx",
@@ -283,6 +288,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
               
               TextField(
                 controller: _passwordController,
+                keyboardType: TextInputType.visiblePassword,
                 decoration: InputDecoration(
                   labelText: "Nueva Contraseña",
                   border: const OutlineInputBorder(),
@@ -302,6 +308,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
               TextField(
                 controller: _confirmPasswordController,
+                keyboardType: TextInputType.visiblePassword,
                 decoration: InputDecoration(
                   labelText: "Confirmar Nueva Contraseña",
                   border: const OutlineInputBorder(),

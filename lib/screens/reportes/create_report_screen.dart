@@ -198,7 +198,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       });
     }
 
-    _tituloController.addListener(_guardarBorrador);
+    _tituloController.addListener(_guardarBorrador); //Bug excepcion en offline
     _descripcionController.addListener(_guardarBorrador);
   }
 

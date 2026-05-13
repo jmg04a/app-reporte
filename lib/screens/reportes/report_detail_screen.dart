@@ -533,7 +533,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             label: Text(
                               _isCreator 
                                   ? "Tu reporte" 
-                                  : (_yaReacciono ? "Ya reportado" : "A mí también"),
+                                  : (_yaReacciono ? "Ya reportado" : "Yo también"),
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             style: ElevatedButton.styleFrom(
